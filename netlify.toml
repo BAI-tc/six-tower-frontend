@@ -4,16 +4,10 @@
 
 [build.environment]
   NEXT_TELEMETRY_DISABLED = "1"
+  NEXT_RUNTIME = "nodejs"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-[[redirects]]
-  from = "/_next/static/*"
-  to = "/_next/static/:splat"
-  status = 200
-
-[[redirects]]
-  from = "/_next/image"
-  to = "/_next/image"
-  status = 200
+[functions]
+  node_bundler = "zisi"
