@@ -1,0 +1,1571 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import Background from '../_components/background';
+import CustomImage from '../_components/custom-image';
+import LoadingScreen from '../_components/loading-screen';
+import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, enrichGamesWithRAWG } from '@/config';
+import { WishlistButton } from '@/hooks/useWishlist';
+// 导入推荐系统 API
+import { fetchSceneInfo, fetchTrendingGames, fetchPopularGames } from '@/api/recommendations';
+import { FestivalHeroSection } from '@/components/festival/hero-section';
+// 六塔模型权重配置
+import { WEIGHT_PRESETS, fetchWeightedRecommendationsWithWeights, deduplicateGames, MODULE_CONFIG } from '@/api/six-tower';
+
+// ============ API Functions ============
+
+// RAWG 热门游戏
+async function fetchRAWGTopRated(page = 1, limit = 18) {
+  try {
+    const response = await fetch(
+      `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&dates=2020-01-01,2025-12-31&ordering=-added,-rating,-reviews_count,-metacritic&page=${page}&page_size=${limit}`,
+      { cache: 'no-store' }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      return { games: data.results || [], nextPage: data.next ? page + 1 : null };
+    }
+  } catch (error) {
+    console.error('Error fetching RAWG games:', error);
+  }
+  return { games: [], nextPage: null };
+}
+
+// 新品热卖
+async function fetchRAWGNewReleases(page = 1, limit = 18) {
+  try {
+    const response = await fetch(
+      `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&dates=2024-01-01,2025-12-31&ordering=-released,-added&page=${page}&page_size=${limit}`,
+      { cache: 'no-store' }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      return data.results || [];
+    }
+  } catch (error) {
+    console.error('Error fetching new releases:', error);
+  }
+  return [];
+}
+
+// ============ Components ============
+
+// 平台图标映射
+const platformConfig = {
+  pc: { name: 'PC', icon: '💻', color: '#1a0a2e' },
+  playstation: { name: 'PS', icon: '🎮', color: '#003087' },
+  xbox: { name: 'Xbox', icon: '🎮', color: '#107C10' },
+  nintendo: { name: 'Switch', icon: '🎮', color: '#e60012' },
+  ios: { name: 'iOS', icon: '📱', color: '#000000' },
+  android: { name: 'Android', icon: '📱', color: '#3DDC84' },
+  linux: { name: 'Linux', icon: '🐧', color: '#FCC624' },
+  mac: { name: 'Mac', icon: '🍎', color: '#000000' },
+};
+
+function getGamePlatforms(game) {
+  const platforms = game.platforms || game.parent_platforms || [];
+  const result = [];
+  const seen = new Set();
+
+  platforms.forEach(p => {
+    const slug = (p.platform?.slug || p.slug || '').toLowerCase();
+    let key = 'pc';
+    if (slug.includes('playstation')) key = 'playstation';
+    else if (slug.includes('xbox')) key = 'xbox';
+    else if (slug.includes('nintendo') || slug.includes('switch')) key = 'nintendo';
+    else if (slug.includes('ios') || slug.includes('apple')) key = 'ios';
+    else if (slug.includes('android')) key = 'android';
+    else if (slug.includes('linux')) key = 'linux';
+    else if (slug.includes('mac')) key = 'mac';
+
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(platformConfig[key] || { name: 'PC', icon: '💻' });
+    }
+  });
+
+  return result.slice(0, 4);
+}
+
+// Netflix风格大卡片 (横向滚动) - 与 Discover 页面样式一致
+function NetflixCard({ game }) {
+  const appId = game.steam_appid || game.product_id || game.id || game.appid;
+  const name = game.title || game.name || game.app_name || `Game ${appId}`;
+
+  // 核心修改：死磕 RAWG 来源，除非万不得已不回退到 Steam CDN
+  const coverUrl = game.background_image || game.cover_url;
+  const rating = game.rawg_metacritic || game.metacritic || game.rawg_rating || game.rating || game.score;
+  const released = game.rawg_released || game.released;
+  const genres = (game.rawg_genres || game.genres || []).slice(0, 2).map(g => {
+    const name = g.name || g;
+    return genreTranslationMap[name] || name;
+  });
+  const platforms = getGamePlatforms(game);
+
+  // 如果没有有效图片，使用占位图
+  const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/600x900/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 10) || 'Game')}`;
+
+  const year = released ? new Date(released).getFullYear() : null;
+
+  // 平台名称简化显示
+  const platformNames = platforms.slice(0, 3).map(p => {
+    const name = p.name?.toLowerCase() || '';
+    if (name.includes('playstation')) return 'PS';
+    if (name.includes('xbox')) return 'Xbox';
+    if (name.includes('nintendo') || name.includes('switch')) return 'Switch';
+    if (name.includes('pc')) return 'PC';
+    if (name.includes('mac')) return 'Mac';
+    if (name.includes('linux')) return 'Linux';
+    if (name.includes('ios') || name.includes('apple')) return 'iOS';
+    if (name.includes('android')) return 'Android';
+    return name.slice(0, 4);
+  });
+
+  return (
+    <Link href={`/games/${appId}`} className="block group relative">
+      <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-[#0e141d] transition-all duration-300">
+        <img
+          src={displayCoverUrl}
+          alt={name}
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          loading="lazy"
+        />
+
+        {/* 评分 - 左上角 */}
+        {rating && (
+          <div className="absolute top-2 left-2 bg-[#ff00ff] text-black text-xs font-bold px-2 py-0.5 rounded z-10">
+            {Math.round(rating)}
+          </div>
+        )}
+
+        {/* 愿望单按钮 - 右上角，始终显示 */}
+        <div className="absolute top-2 right-2 z-30">
+          <WishlistButton game={{ ...game, id: appId, name }} />
+        </div>
+
+        {/* 平台标签 - 右上角，愿望单左边 */}
+        {platformNames.length > 0 && (
+          <div className="absolute top-2 left-2 flex gap-1 z-10" style={{ marginLeft: rating ? '36px' : '0' }}>
+            {platformNames.map((p, idx) => (
+              <span key={idx} className="text-[9px] bg-black/70 text-white px-1.5 py-0.5 rounded">
+                {p}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* 底部信息栏 - 悬浮时上滑显示 */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300 z-20">
+          <h3 className="text-white text-sm font-bold line-clamp-1 mb-1">{name}</h3>
+          {genres.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {genres.map((g, idx) => (
+                <span key={idx} className="text-[10px] bg-[#ff00ff]/20 text-[#ff00ff] px-1.5 py-0.5 rounded">
+                  {g}
+                </span>
+              ))}
+            </div>
+          )}
+          {year && (
+            <p className="text-slate-400 text-[10px]">{year}</p>
+          )}
+        </div>
+      </div>
+      {/* 卡片下方标题 */}
+      <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-[#ff00ff] transition-colors mt-2 text-center">{name}</h3>
+    </Link>
+  );
+}
+
+// Featured 大横版卡片
+function FeaturedCard({ game, reason }) {
+  const appId = game.steam_appid || game.product_id || game.id;
+  const name = game.title || game.name;
+  const coverUrl = game.background_image || game.cover_url;
+  const displayCoverUrl = coverUrl || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+  const rating = game.metacritic || game.rating;
+
+  return (
+    <Link href={`/games/${appId}`} className="block group flex-shrink-0 w-[320px] transition-transform duration-300 hover:scale-[1.02]">
+      <div className="relative w-[320px] aspect-[16/9] rounded-xl overflow-hidden bg-[#0e141d] shadow-xl">
+        <img
+          src={displayCoverUrl}
+          alt={name}
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+
+        {/* 推荐理由 */}
+        {reason && (
+          <div className="absolute top-3 left-3">
+            <span className="bg-[#ff00ff]/90 text-black text-xs font-bold px-2 py-1 rounded">
+              {reason}
+            </span>
+          </div>
+        )}
+
+        {/* 评分 */}
+        {rating && (
+          <div className="absolute top-3 right-3 bg-[#ff00ff] text-black text-sm font-bold px-2 py-1 rounded shadow-lg">
+            {Math.round(rating)}
+          </div>
+        )}
+
+        {/* 标题 */}
+        <div className="absolute bottom-0 left-0 right-0 p-4">
+          <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-[#ff00ff] transition-colors">{name}</h3>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// Epic风格大屏轮播 - 简单版本，移除动画效果
+function EpicCarousel({ games }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [gameDetails, setGameDetails] = useState({});
+  const intervalRef = useRef(null);
+
+  // Fetch game details
+  useEffect(() => {
+    const fetchDetails = async () => {
+      const details = {};
+      for (const game of games.slice(0, 5)) {
+        try {
+          const res = await fetch(`${RAWG_API_URL}/games/${game.id}?key=${RAWG_API_KEY}`, { cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json();
+            details[game.id] = {
+              description: data.description_raw?.substring(0, 150) + '...' || '',
+            };
+          }
+        } catch (e) { /* ignore */ }
+      }
+      setGameDetails(details);
+    };
+    if (games.length > 0) fetchDetails();
+  }, [games.length]);
+
+  // 自动轮播
+  useEffect(() => {
+    if (games.length > 1) {
+      intervalRef.current = setInterval(() => {
+        setCurrentIndex(prev => (prev + 1) % games.length);
+      }, 6000);
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [games.length]);
+
+  // 点击导航点切换
+  const goToSlide = (index) => {
+    setCurrentIndex(index);
+  };
+
+  if (!games || games.length === 0) return null;
+
+  const currentGame = games[currentIndex];
+  const appId = currentGame.steam_appid || currentGame.id;
+  const name = currentGame.name || currentGame.title;
+  const coverUrl = currentGame.background_image;
+  const rating = currentGame.metacritic || currentGame.rating;
+  const genres = currentGame.genres?.slice(0, 3).map(g => {
+    const name = g.name || g;
+    return genreTranslationMap[name] || name;
+  }) || [];
+  const detail = gameDetails[appId];
+
+  return (
+    <div className="relative w-full aspect-[21/9] max-h-[500px] rounded-2xl overflow-hidden bg-[#0e141d] mb-10 group">
+      {/* 轮播图片集合 */}
+      {games.map((game, idx) => (
+        <div
+          key={game.id}
+          className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${idx === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'
+            }`}
+        >
+          <img
+            src={game.background_image}
+            alt={game.name || game.title}
+            className={`w-full h-full object-cover transition-transform duration-[10000ms] ease-out ${idx === currentIndex ? 'scale-105' : 'scale-100'
+              }`}
+          />
+        </div>
+      ))}
+
+      {/* 固定的渐变遮罩 */}
+      <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/70 to-transparent z-10" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#1a0a2e] via-transparent to-transparent z-10" />
+
+      {/* 左上角标签 */}
+      <div className="absolute top-4 left-4 z-20">
+        <span className="bg-[#ff00ff] text-black text-sm font-bold px-4 py-1.5 rounded">现已推出</span>
+      </div>
+
+      {/* 评分 */}
+      {rating && (
+        <div className="absolute top-4 right-4 z-20">
+          <span className="bg-[#ff00ff] text-black text-lg font-bold px-3 py-1.5 rounded">{Math.round(rating)}</span>
+        </div>
+      )}
+
+      {/* 左右侧内容 (随动画切换) */}
+      <div className="absolute inset-0 flex items-center z-20 overflow-hidden">
+        {games.map((game, idx) => {
+          const isActive = idx === currentIndex;
+          const gGenres = game.rawg_genres || game.genres || [];
+          const gDetail = gameDetails[game.id];
+
+          // 确保描述有中文 fallback
+          const displayDesc = gDetail?.description || (isActive ? "在 SixTower 探索这款神作的独特魅力，直面未知的挑战。" : "");
+
+          return (
+            <div
+              key={`content-${game.id}`}
+              className={`absolute left-0 p-8 md:p-12 max-w-xl flex flex-col justify-center h-full transition-all duration-700 ease-out transform ${isActive ? 'translate-x-0 opacity-100 delay-300' : '-translate-x-12 opacity-0'
+                }`}
+              style={{ pointerEvents: isActive ? 'auto' : 'none' }}
+            >
+              <h2 className="text-3xl md:text-5xl font-bold text-white mb-3 line-clamp-2 drop-shadow-lg">{game.name || game.title}</h2>
+              {gGenres.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {gGenres.slice(0, 3).map((g, i) => (
+                    <span key={i} className="text-xs text-white/90 bg-[#ff00ff]/20 backdrop-blur-sm px-3 py-1 rounded-full border border-[#ff00ff]/30">
+                      {g.name || g}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className={`text-slate-300 text-sm mb-6 line-clamp-3 max-w-lg transition-all duration-700 delay-500 transform ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+                {displayDesc}
+              </p>
+              <div className={`flex items-center gap-4 transition-all duration-700 delay-700 transform ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest leading-none">Available on</span>
+                  <span className="text-xs text-white/70 font-bold">Steam / SixTower</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 导航箭头 - 始终显示 */}
+      <button onClick={() => goToSlide((currentIndex - 1 + games.length) % games.length)} className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/80 text-white rounded-full flex items-center justify-center z-30">
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+      </button>
+      <button onClick={() => goToSlide((currentIndex + 1) % games.length)} className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/80 text-white rounded-full flex items-center justify-center z-30">
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+      </button>
+
+      {/* 底部导航点 - 始终显示 */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-30">
+        {games.slice(0, 10).map((_, index) => (
+          <button
+            key={index}
+            onClick={() => goToSlide(index)}
+            className={`h-1.5 rounded-full transition-all duration-300 ${index === currentIndex ? 'bg-white w-6' : 'bg-white/30 w-2 hover:bg-white/50'
+              }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========== 场景网格卡片组件 (清理样式，更符合整体风格) ==========
+function SceneGridCard({ game, isLarge = false, sceneType = 'standard' }) {
+  if (!game) return (
+    <div className="w-full h-full rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
+      <div className="w-12 h-12 rounded-full border-2 border-white/10 border-t-[#ff00ff] animate-spin opacity-20"></div>
+    </div>
+  );
+
+  const appId = game.steam_appid || game.product_id || game.id || game.appid;
+  const name = game.title || game.name || game.app_name;
+  const coverUrl = game.background_image || game.cover_url;
+  const displayCoverUrl = coverUrl || `https://placehold.co/800x450/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+  const matchScore = game.match_reason || game.similarity_score;
+  const rawGenres = game.genres?.slice(0, 2).map(g => g.name || g) || [game.preferred_genre || 'Universal'];
+  const genres = rawGenres.map(g => genreTranslationMap[g] || g).join(' / ');
+
+  const percentage = typeof matchScore === 'number'
+    ? (matchScore > 1 ? Math.round(matchScore) : Math.round(matchScore * 100))
+    : (parseInt(matchScore) || (Math.floor(Math.random() * 15) + 82));
+
+  return (
+    <Link href={`/games/${appId}`} className="group relative block w-full h-full overflow-hidden rounded-xl bg-[#0e141d] shadow-lg border border-white/5 hover:border-[#ff00ff]/30 transition-all duration-500">
+      <img
+        src={displayCoverUrl}
+        alt={name}
+        className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-80 group-hover:opacity-100"
+        loading="lazy"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent" />
+
+      <div className={`absolute bottom-0 left-0 right-0 p-4 md:p-6 flex justify-between items-end transition-transform duration-500 transform ${isLarge ? 'translate-y-0' : 'translate-y-1 group-hover:translate-y-0'}`}>
+        <div className="flex-1 min-w-0 pr-4">
+          <h3 className={`${isLarge ? 'text-2xl md:text-3xl' : 'text-base'} text-white font-bold leading-tight truncate drop-shadow-lg mb-1 group-hover:text-[#ff00ff] transition-colors`}>
+            {name}
+          </h3>
+          <p className={`${isLarge ? 'text-sm' : 'text-[10px]'} text-white/50 font-medium tracking-wide truncate`}>
+            {genres}
+          </p>
+        </div>
+        <div className={`${isLarge ? 'text-3xl' : 'text-xl'} font-bold opacity-90 transition-all duration-300 text-white group-hover:text-[#ff00ff]`}>
+          {percentage}%
+        </div>
+      </div>
+
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-[#ff00ff]/5" />
+    </Link>
+  );
+}
+
+// ========== 场景轮播内容组件 ==========
+// ========== 场景轮播内容组件 (对接主标题样式) ==========
+function SceneCarouselSection({ scenes, activeIndex, setActiveIndex }) {
+  if (!scenes || scenes.length === 0) return null;
+
+  const currentScene = scenes[activeIndex];
+  const games = currentScene.games?.slice(0, 6) || [];
+
+  if (games.length === 0) return null;
+
+  return (
+    <section className="mb-20 px-1">
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">
+            {currentScene.title}
+          </h2>
+          <p className="text-slate-400 text-sm mt-1 font-medium max-w-xl">
+            {currentScene.subtitle}
+          </p>
+        </div>
+
+        {/* 导航标签 - 清爽 pill 风格 */}
+        <div className="flex flex-wrap gap-2 bg-white/5 p-1 rounded-full border border-white/5 backdrop-blur-md">
+          {scenes.map((scene, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActiveIndex(idx)}
+              className={`px-6 py-2 rounded-full text-xs font-bold transition-all duration-300 ${idx === activeIndex
+                ? 'bg-[#ff00ff] text-black shadow-lg'
+                : 'text-white/40 hover:text-white hover:bg-white/5'
+                }`}
+            >
+              {scene.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 6格栅格布局 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 grid-rows-none lg:grid-rows-3 gap-4 aspect-none lg:aspect-[24/10] min-h-[600px] lg:min-h-0">
+        <div className="col-span-1 row-span-1 h-[200px] lg:h-auto"><SceneGridCard game={games[0]} sceneType={currentScene.type} /></div>
+        <div className="col-span-1 row-span-1 h-[200px] lg:h-auto"><SceneGridCard game={games[1]} sceneType={currentScene.type} /></div>
+        <div className="col-span-1 row-span-1 h-[200px] lg:h-auto"><SceneGridCard game={games[2]} sceneType={currentScene.type} /></div>
+        <div className="col-span-1 sm:col-span-2 lg:col-span-2 row-span-2 h-[300px] lg:h-auto"><SceneGridCard game={games[3]} isLarge={true} sceneType={currentScene.type} /></div>
+        <div className="col-span-1 row-span-1 h-[200px] lg:h-auto"><SceneGridCard game={games[4]} sceneType={currentScene.type} /></div>
+        <div className="col-span-1 row-span-1 h-[200px] lg:h-auto"><SceneGridCard game={games[5]} sceneType={currentScene.type} /></div>
+      </div>
+    </section>
+  );
+}
+
+
+// Section 标题组件
+function SectionHeader({ title, subtitle, link }) {
+  return (
+    <div className="flex items-end justify-between mb-5">
+      <div>
+        <h2 className="text-2xl font-bold text-white">{title}</h2>
+        {subtitle && <p className="text-sm text-slate-400 mt-1">{subtitle}</p>}
+      </div>
+      {link && (
+        <Link href={link} className="text-sm text-[#ff00ff] hover:text-white transition-colors flex items-center gap-1">
+          查看全部
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+// 横向滚动容器
+function HorizontalScroll({ children }) {
+  const scrollRef = useRef(null);
+
+  const scroll = (direction) => {
+    if (scrollRef.current) {
+      const scrollAmount = direction === 'left' ? -400 : 400;
+      scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
+  return (
+    <div className="relative group">
+      {/* 滚动按钮 - 左 */}
+      <button
+        onClick={() => scroll('left')}
+        className="absolute left-0 top-0 bottom-4 w-12 z-10 bg-black/50 hover:bg-black/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+
+      {/* 滚动内容 */}
+      <div
+        ref={scrollRef}
+        className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide scroll-smooth"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {children}
+      </div>
+
+      {/* 滚动按钮 - 右 */}
+      <button
+        onClick={() => scroll('right')}
+        className="absolute right-0 top-0 bottom-4 w-12 z-10 bg-black/50 hover:bg-black/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// Ubisoft风格横向滚动 - 简单版本，修复hover冲突
+function UbisoftCarousel({ games }) {
+  const scrollRef = useRef(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const itemsPerView = 6;
+  const cardWidth = 180;
+  const gap = 16;
+  const totalPages = Math.max(1, Math.ceil(games.length / itemsPerView));
+
+  const scroll = (direction) => {
+    if (scrollRef.current) {
+      const scrollAmount = (cardWidth + gap) * itemsPerView;
+      scrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const handleScroll = () => {
+    if (scrollRef.current) {
+      const scrollLeft = scrollRef.current.scrollLeft;
+      const pageWidth = (cardWidth + gap) * itemsPerView;
+      const page = Math.round(scrollLeft / pageWidth);
+      setCurrentPage(Math.min(page, totalPages - 1));
+    }
+  };
+
+  if (!games.length) return null;
+
+  return (
+    <div className="relative">
+      {/* 滚动内容 */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex gap-4 overflow-x-auto pb-6 scrollbar-hide scroll-smooth px-4"
+        style={{ scrollbarWidth: 'none' }}
+      >
+        {games.map((game) => (
+          <div key={game.id} className="flex-shrink-0" style={{ width: cardWidth }}>
+            <NetflixCard game={game} />
+          </div>
+        ))}
+      </div>
+
+      {/* 滚动按钮 - 左 */}
+      {currentPage > 0 && (
+        <button
+          onClick={() => scroll('left')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/80 text-white rounded-full flex items-center justify-center z-30"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      )}
+
+      {/* 滚动按钮 - 右 */}
+      {currentPage < totalPages - 1 && (
+        <button
+          onClick={() => scroll('right')}
+          className="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/80 text-white rounded-full flex items-center justify-center z-30"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+
+      {/* 底部导航点 */}
+      {totalPages > 1 && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2 z-30">
+          {Array.from({ length: totalPages }).map((_, index) => (
+            <button
+              key={index}
+              onClick={() => {
+                scrollRef.current?.scrollTo({ left: index * (cardWidth + gap) * itemsPerView, behavior: 'smooth' });
+                setCurrentPage(index);
+              }}
+              className={`h-1.5 rounded-full transition-all duration-300 ${index === currentPage ? 'bg-white w-6' : 'bg-white/30 w-2 hover:bg-white/50'
+                }`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ====== SixTower 专属推荐 Banner ======
+function SixTowerBanner() {
+  return (
+    <div className="mb-14 mt-12 grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-12 shrink-0">
+      {/* 悟空 Banner - 链接到游戏详情页 */}
+      <Link href="/games/2692320" className="relative h-[200px] rounded-[24px] bg-gradient-to-br from-[#1a1a1a] via-[#2d1212] to-black hover:scale-[1.01] transition-all duration-500 group block shadow-2xl border border-white/5">
+        {/* Banner左侧文字 */}
+        <div className="relative z-20 h-full flex flex-col justify-center pl-8 md:pl-12 w-3/5">
+          <h2 className="text-3xl font-black text-white tracking-widest drop-shadow-md mb-2">黑神话：悟空</h2>
+          <p className="text-xl text-white font-bold drop-shadow-md mb-2 pt-2">直面天命</p>
+          <div className="absolute bottom-6 left-8 md:left-12 opacity-90 flex items-center gap-2">
+            <span className="text-xl font-black text-white italic tracking-tighter opacity-80">SIX<span className="text-[#ff00ff]">TOWER</span></span>
+          </div>
+        </div>
+
+        {/* 右侧立体配图 - 模拟角色出框感 */}
+        <div className="absolute right-14 -top+80 bottom-4 w-[40%] sm:w-[35%] pointer-events-none z-30 transition-transform duration-500 group-hover:scale-[1.03] origin-bottom flex items-end">
+          <img src="/wukong-segmented.png" alt="Wukong" className="w-auto h-[150%] object-contain object-bottom drop-shadow-[0_20px_50px_rgba(220,38,38,0.3)] transition-transform scale-[1.5]" />
+        </div>
+      </Link>
+
+      {/* 钟馗 Banner */}
+      <Link href="https://gamesci.cn/zhongkui/" target="_blank" rel="noopener noreferrer" className="relative h-[200px] rounded-[24px] bg-gradient-to-br from-[#1a1a1a] via-[#121212] to-black hover:scale-[1.01] transition-all duration-500 group block shadow-2xl border border-white/5 mt-8 lg:mt-0">
+        <div className="relative z-20 h-full flex flex-col justify-center pl-8 md:pl-12 w-3/5">
+          <h2 className="text-3xl font-black text-white tracking-widest drop-shadow-md mb-2">黑神话：钟馗</h2>
+          <p className="text-xl text-white font-bold drop-shadow-md mb-2 pt-2">诡道求生</p>
+          <div className="absolute bottom-6 left-8 md:left-12 opacity-90 flex items-center gap-2">
+            <span className="text-xl font-black text-white italic tracking-tighter opacity-80">SIX<span className="text-[#ff00ff]">TOWER</span></span>
+          </div>
+        </div>
+
+        <div className="absolute right-8 -top-10 bottom-4 w-[40%] sm:w-[45%] pointer-events-none z-30 transition-transform duration-500 group-hover:scale-[1.03] origin-bottom flex items-end">
+          {/* 使用一张具有神话色彩的图替代钟馗 */}
+          <img src="/downloaded-image.jpg" alt="Zhongkui" className="w-auto h-[150%] object-contain object-bottom transition-transform opacity-60 group-hover:opacity-100 translate-y-16 scale-[1.1]" />
+        </div>
+      </Link>
+    </div>
+  );
+}
+
+// Steam/Generic 风格个性化模块 (模仿图片中的干净排版)
+function PersonalizedSteamSection({ games, title, reason, type = 'standard' }) {
+  if (!games || !games.length) return null;
+
+  const gridClass = type === 'large'
+    ? "grid grid-cols-1 md:grid-cols-2 gap-6"
+    : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4";
+
+  return (
+    <section className="mb-14 px-1">
+      <div className="flex items-baseline gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-white tracking-tight">{title}</h2>
+        <span className="text-sm text-[#ff00ff] font-medium opacity-80">{reason}</span>
+      </div>
+
+      <div className={gridClass}>
+        {games.slice(0, type === 'large' ? 2 : 4).map((game, idx) => {
+          const appId = game.steam_appid || game.product_id || game.id || game.appid;
+          const name = game.title || game.name || game.app_name;
+          const coverUrl = game.background_image || game.cover_url;
+          const displayCoverUrl = coverUrl || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+          const rating = game.metacritic || game.rating;
+
+          return (
+            <Link key={`${appId}-${idx}`} href={`/games/${appId}`} className="group block">
+              <div className="relative aspect-[16/9] rounded-xl overflow-hidden bg-[#1a1f2e] mb-3 shadow-lg border border-white/5 group-hover:border-[#ff00ff]/30 transition-all">
+                <img
+                  src={displayCoverUrl}
+                  alt={name}
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  loading="lazy"
+                />
+
+                {/* 愿望单按钮 - 悬浮显示 */}
+                <div className="absolute top-3 left-3 z-30 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <WishlistButton game={{ ...game, id: appId, name }} />
+                </div>
+
+                {/* 评分标签 */}
+                {rating && (
+                  <div className="absolute top-3 right-3 bg-[#ff00ff] text-white text-[10px] font-bold px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                    {Math.round(rating)}
+                  </div>
+                )}
+
+                {/* 渐变遮罩 */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+              <div className="px-1">
+                <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-[#ff00ff] transition-colors">{name}</h3>
+
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// 紧凑型分类展示 (不重复样式，更加节制)
+
+// 核心类型翻译映射
+const genreTranslationMap = {
+  'Action': '动作',
+  'Role-Playing': '角色扮演',
+  'RPG': '角色扮演',
+  'Strategy': '策略',
+  'Adventure': '冒险',
+  'Simulation': '模拟',
+  'Sports': '体育',
+  'Racing': '竞速',
+  'Massively Multiplayer': '多人在线',
+  'Shooter': '射击',
+  'Puzzle': '益智',
+  'Indie': '独立',
+  'Platformer': '平台跳跃',
+  'Fighting': '格斗',
+  'Casual': '休闲'
+};
+
+// 紧凑型分类展示 (不重复样式，更加节制)
+function GenreCompactShowcase({ genreSpotlight }) {
+  const genres = Object.entries(genreSpotlight).slice(0, 3);
+
+  return (
+    <section className="mt-16 mb-24">
+      <div className="flex items-center gap-3 mb-8">
+        <h2 className="text-2xl font-bold text-white tracking-tight">探索热门类型</h2>
+        <div className="h-[1px] flex-grow bg-white/10"></div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {genres.map(([genre, games]) => (
+          <div key={genre} className="bg-[#1a1f2e]/40 rounded-3xl p-6 border border-white/5 backdrop-blur-sm hover:bg-[#1a1f2e]/60 transition-all duration-300">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <span className="w-1.5 h-6 bg-[#ff00ff] rounded-full drop-shadow-[0_0_5px_#ff00ff]"></span>
+                {genre}
+              </h3>
+              <Link href={`/discover?genres=${genre.toLowerCase()}`} className="text-[10px] font-bold text-white/40 hover:text-[#ff00ff] transition-colors uppercase tracking-widest border border-white/10 px-2 py-1 rounded">
+                Browse
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {games.slice(0, 4).map((game, idx) => {
+                const appId = game.steam_appid || game.product_id || game.id || game.appid;
+                const gameName = game.name || game.title || game.app_name;
+                const coverUrl = game.background_image || game.cover_url || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null);
+                const displayCoverUrl = coverUrl || `https://placehold.co/450x600/1a1a2e/ffffff?text=${encodeURIComponent(gameName?.slice(0, 10) || 'Game')}`;
+                return (
+                  <Link
+                    key={`${appId}-${idx}`}
+                    href={`/games/${appId}`}
+                    className="relative aspect-[3/4] rounded-xl overflow-hidden group/thumb bg-black shadow-md border border-white/5 hover:border-[#ff00ff]/30 transition-all"
+                  >
+                    <img src={displayCoverUrl} alt={gameName} className="w-full h-full object-cover grayscale-[0.2] group-hover/thumb:grayscale-0 transition-all duration-700 group-hover/thumb:scale-110" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-end p-2.5">
+                      <h3 className="text-white font-bold text-xs line-clamp-1 group-hover/thumb:text-[#ff00ff] transition-colors">{gameName}</h3>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// 专业页脚组件
+function Footer() {
+  const categories = [
+    {
+      title: '商店',
+      links: ['浏览游戏', '新品热卖', '热门排行', '个性化推荐'],
+    },
+    {
+      title: '社区',
+      links: ['讨论区', '动态', '创意工坊', '市场'],
+    },
+    {
+      title: '支持',
+      links: ['帮助中心', '安全与隐私', '账号状态', '联系我们'],
+    },
+    {
+      title: 'SixTower',
+      links: ['关于我们', '原创游戏', '加入我们', '媒体资料'],
+    },
+  ];
+
+  return (
+    <footer className="mt-20 py-16 border-t border-white/5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-12 mb-16">
+        {categories.map((cat) => (
+          <div key={cat.title}>
+            <h4 className="text-white font-bold text-sm uppercase tracking-widest mb-6">{cat.title}</h4>
+            <ul className="space-y-4">
+              {cat.links.map((link) => (
+                <li key={link}>
+                  <Link href="#" className="text-slate-500 hover:text-[#ff00ff] text-sm transition-colors">
+                    {link}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col md:flex-row items-center justify-between gap-8 pt-10 border-t border-white/5">
+        <div className="flex items-center gap-6">
+          <span className="text-2xl font-black text-white tracking-tighter">SIX<span className="text-[#ff00ff]">TOWER</span></span>
+          <p className="text-slate-600 text-[10px] max-w-xs leading-relaxed">
+            © 2026 SixTower. All rights reserved. All trademarks are the property of their respective owners in the US and other countries.
+          </p>
+        </div>
+
+        <div className="flex gap-4">
+          {['Twitter', 'Discord', 'YouTube', '哔哩哔哩'].map(social => (
+            <Link key={social} href="#" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#ff00ff] transition-all">
+              <span className="sr-only">{social}</span>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <rect width="24" height="24" rx="4" />
+              </svg>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// ============ Main Page ============
+
+export default function HomePage() {
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 公开数据
+  const [topRatedGames, setTopRatedGames] = useState([]);
+  const [newReleases, setNewReleases] = useState([]);
+  // 推荐系统数据
+  const [forYouRecommendations, setForYouRecommendations] = useState([]);
+  const [trendingGames, setTrendingGames] = useState([]);
+  const [genreSpotlight, setGenreSpotlight] = useState({});
+  const [similarGames, setSimilarGames] = useState([]);
+  const [popularNotOwned, setPopularNotOwned] = useState([]);
+  const [recentGames, setRecentGames] = useState([]);  // 从 Steam API 获取
+  const [genreGames, setGenreGames] = useState([]);
+
+  // 场景列表
+  const [scenes, setScenes] = useState([]);
+  const [activeSceneIndex, setActiveSceneIndex] = useState(0);
+  const [sceneInfo, setSceneInfo] = useState(null);
+
+  // 加载数据
+  useEffect(() => {
+    const steamId = localStorage.getItem('steam_id');
+    const username = localStorage.getItem('steam_username');
+    const avatar = localStorage.getItem('steam_avatar');
+
+    if (!steamId) {
+      // 未登录用户也加载场景推荐数据（使用公开数据）
+      loadPublicDataWithScenes();
+      return;
+    }
+
+    setUser({ steamId, username: username || 'Steam 用户', avatar: avatar || '' });
+    loadAllData(steamId);
+  }, []);
+
+  // 场景自动切换
+  useEffect(() => {
+    if (scenes.length > 1) {
+      const timer = setInterval(() => {
+        setActiveSceneIndex(prev => (prev + 1) % scenes.length);
+      }, 10000);
+      return () => clearInterval(timer);
+    }
+  }, [scenes.length]);
+
+  // 未登录用户加载公开数据 + 默认场景
+  const loadPublicDataWithScenes = async () => {
+    setIsLoading(true);
+
+    // 未登录用户使用 RAWG API（公开数据）
+    const [topRated, newReleasesData, trending] = await Promise.all([
+      fetchRAWGTopRated(1, 18),
+      fetchRAWGNewReleases(1, 18),
+      fetchTrendingGames(10, 'week')
+    ]);
+
+    // 类型专题 - 使用非六塔 API
+    const genres = ['动作', '角色扮演', '策略', '冒险', '模拟'];
+    const genrePromises = genres.map(g => fetchPopularGames(8, g));
+    const genreResults = await Promise.all(genrePromises);
+    const genreObj = {};
+    genres.forEach((g, i) => {
+      if (genreResults[i]?.games?.length > 0) {
+        genreObj[g] = genreResults[i].games;
+      }
+    });
+
+    // 加载默认场景 - 使用非六塔 API
+    let sceneList = [];
+    try {
+      const [tribeRes, quantumRes, resurrectionRes, chronosRes, cultRes] = await Promise.all([
+        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=3&topk=${MODULE_CONFIG.tribe.topk}&offset=${MODULE_CONFIG.tribe.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=7&topk=${MODULE_CONFIG.quantum.topk}&offset=${MODULE_CONFIG.quantum.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=8&topk=${MODULE_CONFIG.resurrection.topk}&offset=${MODULE_CONFIG.resurrection.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=9&topk=${MODULE_CONFIG.chronos.topk}&offset=${MODULE_CONFIG.chronos.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=10&topk=${MODULE_CONFIG.cult.topk}&offset=${MODULE_CONFIG.cult.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] }))
+      ]);
+
+      // 使用 enrichGamesWithRAWG 获取 RAW G 高清图片（类似 Festival 的方式）
+      const allBackendGames = [
+        ...(tribeRes.recommendations || []),
+        ...(quantumRes.recommendations || []),
+        ...(resurrectionRes.recommendations || []),
+        ...(chronosRes.recommendations || []),
+        ...(cultRes.recommendations || [])
+      ];
+
+      if (allBackendGames.length > 0) {
+        console.log('[RAWG] Enriching images for', allBackendGames.length, 'backend games');
+        const enrichedGames = await enrichGamesWithRAWG(allBackendGames);
+
+        // 将增强后的游戏数据分配回各个场景
+        const enrichedMap = new Map(enrichedGames.map(g => [g.appid || g.id, g]));
+        const applyEnriched = (games) => {
+          return games.map(g => enrichedMap.get(g.appid || g.id) || g);
+        };
+
+        tribeRes.recommendations = applyEnriched(tribeRes.recommendations || []);
+        quantumRes.recommendations = applyEnriched(quantumRes.recommendations || []);
+        resurrectionRes.recommendations = applyEnriched(resurrectionRes.recommendations || []);
+        chronosRes.recommendations = applyEnriched(chronosRes.recommendations || []);
+        cultRes.recommendations = applyEnriched(cultRes.recommendations || []);
+      }
+
+      sceneList = [
+        {
+          id: 1,
+          label: '热门趋势',
+          title: '热门趋势',
+          subtitle: '全服玩家都在玩的游戏',
+          games: trending.games || []
+        },
+        {
+          id: 2,
+          label: '高分游戏',
+          title: '高分游戏',
+          subtitle: '媒体和玩家评分最高的游戏',
+          games: topRated.games || []
+        },
+        {
+          id: 3,
+          label: '社区精选',
+          title: '社区精选',
+          subtitle: '游戏社区最喜爱的游戏',
+          games: tribeRes.recommendations || []
+        },
+        {
+          id: 7,
+          label: '冷门佳作',
+          title: '冷门佳作',
+          subtitle: '被低估的精品游戏',
+          games: quantumRes.recommendations || [],
+          type: 'quantum'
+        },
+        {
+          id: 8,
+          label: '新品上架',
+          title: '新品上架',
+          subtitle: '最新发布的游戏',
+          games: resurrectionRes.recommendations || [],
+          type: 'resurrection'
+        },
+        {
+          id: 9,
+          label: '快玩游戏',
+          title: '快玩游戏',
+          subtitle: '适合短时间游玩的游戏',
+          games: chronosRes.recommendations || [],
+          type: 'chronos'
+        },
+        {
+          id: 10,
+          label: '经典游戏',
+          title: '经典游戏',
+          subtitle: '核心玩家心中的神作',
+          games: cultRes.recommendations || [],
+          type: 'cult'
+        }
+      ].filter(s => s.games && s.games.length >= 1);
+
+    } catch (error) {
+      console.error('Error loading default scenes:', error);
+    }
+
+    // 设置所有数据
+    setTopRatedGames(topRated.games || []);
+    setNewReleases(newReleasesData || []);
+    setTrendingGames(trending.games || []);
+    setGenreSpotlight(genreObj);
+    setScenes(sceneList);
+
+    setIsLoading(false);
+  };
+
+  // 登录用户数据加载（全六塔模型 + 去重）
+  const loadAllData = async (steamId) => {
+    setIsLoading(true);
+
+    // 全局去重集合
+    const usedGameIds = new Set();
+
+    try {
+      // 第一批：六塔模型核心推荐（并行请求，带权重）
+      const [topRatedResult, newReleasesResult] = await Promise.all([
+        // 高分游戏 - 弱化个性化，强化质量基因(Prof)与全局热度
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.highRated.topk,
+          WEIGHT_PRESETS.highRated,
+          MODULE_CONFIG.highRated.offset
+        ),
+        // 新品热卖 - 极高热度权重，引入分群热度捕捉垂直圈子爆款
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.newReleases.topk,
+          WEIGHT_PRESETS.newReleases,
+          MODULE_CONFIG.newReleases.offset
+        )
+      ]);
+
+      // 去重处理
+      const topRatedGames = deduplicateGames(topRatedResult.recommendations || [], usedGameIds, 18);
+      const newReleasesGames = deduplicateGames(newReleasesResult.recommendations || [], usedGameIds, 18);
+
+      setTopRatedGames(topRatedGames);
+      setNewReleases(newReleasesGames);
+
+      // 获取场景信息
+      let sceneInfoData = null;
+      try {
+        sceneInfoData = await fetchSceneInfo(steamId);
+        setSceneInfo(sceneInfoData);
+      } catch (e) {
+        console.warn('Failed to fetch scene info:', e);
+      }
+
+      // 第二批：六塔模型核心推荐（并行）
+      const [trendingResult, popularNotOwnedResult, similarResult, genreResult, recentResult] = await Promise.all([
+        // 热门趋势 - 结合全局与同好群体的动态趋势
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.trending.topk,
+          WEIGHT_PRESETS.trending,
+          MODULE_CONFIG.trending.offset
+        ),
+        // 热门未拥有 - 在大热榜中剔除已购，SVD保证符合用户大口味
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.popularNotOwned.topk,
+          WEIGHT_PRESETS.popularNotOwned,
+          MODULE_CONFIG.popularNotOwned.offset
+        ),
+        // 相似游戏 - 双核心：语义相似+共购关联
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.similar.topk,
+          WEIGHT_PRESETS.similar,
+          MODULE_CONFIG.similar.offset
+        ),
+        // 类型推荐 - 语义塔(Sem)锁死类型标签，SVD做类内排序 (增加候选量)
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.byGenre.topk,
+          WEIGHT_PRESETS.byGenre,
+          MODULE_CONFIG.byGenre.offset
+        ),
+        // 最近游玩 - 基于最后玩过的游戏，触发强关联(ICF)与题材(Sem)
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.recentPlayed.topk,
+          WEIGHT_PRESETS.recentPlayed,
+          MODULE_CONFIG.recentPlayed.offset
+        )
+      ]);
+
+      // 去重处理
+      const trendingGames = deduplicateGames(trendingResult.recommendations || [], usedGameIds, 10);
+      const popularNotOwnedGames = deduplicateGames(popularNotOwnedResult.recommendations || [], usedGameIds, 20);
+      const similarGames = deduplicateGames(similarResult.recommendations || [], usedGameIds, 30);
+      const genreGames = deduplicateGames(genreResult.recommendations || [], usedGameIds, 60);
+      const recentGames = deduplicateGames(recentResult.recommendations || [], usedGameIds, 5);
+
+      // 从 RAW G 获取 16:9 高清图片 (使用 enrichGamesWithRAWG，类似 Festival)
+      const allGamesArray = [
+        ...topRatedGames,
+        ...newReleasesGames,
+        ...popularNotOwnedGames,
+        ...trendingGames,
+        ...similarGames,
+        ...genreGames
+      ];
+
+      console.log('[RAWG] Enriching images for', allGamesArray.length, 'games');
+
+      // 使用 enrichGamesWithRAWG 批量获取 RAW G 图片
+      if (allGamesArray.length > 0) {
+        const enrichedGames = await enrichGamesWithRAWG(allGamesArray);
+
+        // 按 appid 建立映射
+        const enrichedMap = new Map(enrichedGames.map(g => [String(g.appid || g.id || g.product_id), g]));
+
+        // 应用到各个游戏数组 (不直接修改原数组长度，而是创建新数组)
+        const applyEnriched = (games) => {
+          return games.map(g => enrichedMap.get(String(g.appid || g.id || g.product_id)) || g);
+        };
+
+        // 更新各个模块数据
+        const enrichedTopRated = applyEnriched(topRatedGames);
+        const enrichedNewReleases = applyEnriched(newReleasesGames);
+        const enrichedPopularNotOwned = applyEnriched(popularNotOwnedGames);
+        const enrichedTrending = applyEnriched(trendingGames);
+        const enrichedSimilar = applyEnriched(similarGames);
+        const enrichedGenre = applyEnriched(genreGames);
+
+        setTopRatedGames(enrichedTopRated);
+        setNewReleases(enrichedNewReleases);
+        setPopularNotOwned(enrichedPopularNotOwned);
+        setTrendingGames(enrichedTrending);
+        setSimilarGames(enrichedSimilar);
+
+        // 生成类型专题
+        if (enrichedGenre.length > 0) {
+          const grouped = {};
+
+          // 第一次遍历：按类型分组并翻译
+          enrichedGenre.forEach(game => {
+            const rawGenres = game.genres?.map(g => g.name || g) || [];
+            let primaryGenre = rawGenres[0] || game.preferred_genre || 'Indie';
+
+            // 翻译
+            primaryGenre = genreTranslationMap[primaryGenre] || primaryGenre;
+
+            if (!grouped[primaryGenre]) grouped[primaryGenre] = [];
+            if (grouped[primaryGenre].length < 4) {
+              grouped[primaryGenre].push(game);
+            }
+          });
+
+          // 第二次遍历：补齐不足 4 个的类型
+          Object.keys(grouped).forEach(genre => {
+            if (grouped[genre].length < 4) {
+              const shortfall = 4 - grouped[genre].length;
+              // 从其他未分配的游戏中借调 (或者直接使用 enrichedGenre 中的其他游戏)
+              const extras = enrichedGenre
+                .filter(g => !grouped[genre].some(existing => (existing.appid || existing.id) === (g.appid || g.id)))
+                .slice(0, shortfall);
+              grouped[genre] = [...grouped[genre], ...extras];
+            }
+          });
+
+          // 确保至少有 3 个分类
+          if (Object.keys(grouped).length < 2 && enrichedGenre.length >= 8) {
+            grouped['热门推荐'] = enrichedGenre.slice(0, 4);
+            grouped['精品必玩'] = enrichedGenre.slice(4, 8);
+            grouped['发现更多'] = enrichedGenre.slice(8, 12);
+          }
+
+          setGenreSpotlight(grouped);
+        }
+
+        console.log('[RAWG] Enriched home page modules');
+      } else {
+        // 如果没有成功增强，也需要设置基础数据
+        setTrendingGames(trendingGames);
+        setPopularNotOwned(popularNotOwnedGames);
+        setSimilarGames(similarGames);
+      }
+
+      // 第三批：场景推荐（全六塔模型）
+      const [guessYouLikeResult, genreHotResult, tribeResult, quantumResult, resurrectionResult, chronosResult, cultResult] = await Promise.all([
+        // 猜你喜欢 - 经典配方：SVD主导，Pop保底
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.guessYouLike.topk,
+          WEIGHT_PRESETS.guessYouLike,
+          MODULE_CONFIG.guessYouLike.offset
+        ),
+        // 类型热门 - 限定语义空间后的热度竞赛
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.genreHot.topk,
+          WEIGHT_PRESETS.genreHot,
+          MODULE_CONFIG.genreHot.offset
+        ),
+        // 同好玩家 - 社会塔核心：完全由同族群(ClusterPop)定义
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.tribe.topk,
+          WEIGHT_PRESETS.tribe,
+          MODULE_CONFIG.tribe.offset
+        ),
+        // 可能会喜欢 - 强化SVD探索性，增加Prof基因相似度
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.quantum.topk,
+          WEIGHT_PRESETS.quantum,
+          MODULE_CONFIG.quantum.offset
+        ),
+        // 怀旧重温 - 基因塔(Prof)锁定老款、低活跃但高评分的星系
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.resurrection.topk,
+          WEIGHT_PRESETS.resurrection,
+          MODULE_CONFIG.resurrection.offset
+        ),
+        // 时间匹配 - 提取Prof中的"时长基因"，匹配用户历史习惯
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.chronos.topk,
+          WEIGHT_PRESETS.chronos,
+          MODULE_CONFIG.chronos.offset
+        ),
+        // 核心精选 - 专注SVD深度偏好与Sem硬核标签
+        fetchWeightedRecommendationsWithWeights(
+          steamId,
+          MODULE_CONFIG.cult.topk,
+          WEIGHT_PRESETS.cult,
+          MODULE_CONFIG.cult.offset
+        )
+      ]);
+
+      // 去重处理 (场景模块)
+      const getModuleGames = (rawList, limit) => {
+        // 对于场景标签页，我们适当放宽去重限制，如果严格去重导致推荐位全空，则允许展示少量重复
+        const deduped = deduplicateGames(rawList || [], usedGameIds, limit);
+        if (deduped.length >= limit / 2) return deduped;
+
+        // 如果去重严重影响数量，返回原始数据的前 limit 个，确保内容不留白
+        return (rawList || []).slice(0, limit);
+      };
+
+      const guessYouLikeGames = getModuleGames(guessYouLikeResult.recommendations, 20);
+      const genreHotGames = getModuleGames(genreHotResult.recommendations, 12);
+      const tribeGames = getModuleGames(tribeResult.recommendations, 12);
+      const quantumGames = getModuleGames(quantumResult.recommendations, 12);
+      const resurrectionGames = getModuleGames(resurrectionResult.recommendations, 12);
+      const chronosGames = getModuleGames(chronosResult.recommendations, 12);
+      const cultGames = getModuleGames(cultResult.recommendations, 12);
+
+      // 为场景数据也尝试增强图片
+      const sceneGamesBatch = [
+        ...guessYouLikeGames,
+        ...genreHotGames,
+        ...tribeGames,
+        ...quantumGames
+      ];
+      if (sceneGamesBatch.length > 0) {
+        await enrichGamesWithRAWG(sceneGamesBatch);
+      }
+
+      // 组装场景数据
+      const sceneList = [
+        {
+          id: 1,
+          label: '猜你喜欢',
+          title: '猜你喜欢',
+          subtitle: '基于您喜欢玩过的游戏推荐',
+          games: guessYouLikeGames,
+          isSixTower: true
+        },
+        {
+          id: 2,
+          label: '类型热门',
+          title: '您喜好的类型热门游戏',
+          subtitle: sceneInfoData?.galaxy_info?.dna
+            ? `${sceneInfoData.galaxy_info.dna}类型爱好者都在玩`
+            : '您喜欢的游戏类型的热门作品',
+          games: genreHotGames,
+          isSixTower: true
+        },
+        {
+          id: 3,
+          label: '同好玩家',
+          title: '与您品味相似的玩家也在玩',
+          subtitle: `查看${sceneInfoData?.cluster_player_count || '2,000'}+位品味相近的玩家现在在玩什么`,
+          games: tribeGames,
+          isSixTower: true
+        },
+        {
+          id: 7,
+          label: '可能会喜欢',
+          title: '您可能会喜欢',
+          subtitle: '不同类型，但基于您的喜好我们认为您会喜欢',
+          games: quantumGames,
+          type: 'quantum',
+          isSixTower: true
+        },
+        {
+          id: 8,
+          label: '怀旧重温',
+          title: '怀旧重温',
+          subtitle: '发现您库中游戏的好伙伴',
+          games: resurrectionGames,
+          type: 'resurrection',
+          isSixTower: true
+        },
+        {
+          id: 9,
+          label: '时间匹配',
+          title: '时间匹配',
+          subtitle: '根据您当前可玩游戏时间推荐',
+          games: chronosGames,
+          type: 'chronos',
+          isSixTower: true
+        },
+        {
+          id: 10,
+          label: '核心精选',
+          title: '核心精选',
+          subtitle: '只有核心玩家才知道的神作',
+          games: cultGames,
+          type: 'cult',
+          isSixTower: true
+        }
+      ].filter(s => s.games && s.games.length >= 1);
+
+      console.log('Final sceneList:', sceneList);
+      setScenes(sceneList);
+      setRecentGames(recentGames);
+
+      // 保存已展示的 ID 供游戏节页面去重 (优先保证首页展示)
+      if (typeof window !== 'undefined' && usedGameIds.size > 0) {
+        sessionStorage.setItem('homepage_shown_ids', JSON.stringify(Array.from(usedGameIds)));
+      }
+    } catch (error) {
+      console.error('Error loading home data:', error);
+    }
+
+    setIsLoading(false);
+  };
+
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <>
+      {/* Full Page Background with Gradient */}
+      <div className="fixed inset-0 -z-10 bg-[#1a0a2e]">
+        <div className="absolute inset-0">
+          <picture>
+            <source type="image/avif" srcSet="/cyberpunk-bg.webp" />
+            <source type="image/webp" srcSet="/cyberpunk-bg.webp" />
+            <CustomImage source="/cyberpunk-bg.webp" classes="object-cover w-full h-full opacity-50 blur-[3px] scale-105" priority={true} />
+          </picture>
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-b from-[#1a0a2e]/30 via-[#1a0a2e]/80 to-[#1a0a2e] pointer-events-none" />
+      </div>
+
+      {/* Hero Banner */}
+      <div className="relative pt-24 pb-4">
+
+        <div className="px-4 xl:px-40">
+          <div className="container mx-auto">
+            {user ? (
+              <>
+                <h1 className="text-4xl md:text-5xl font-bold text-white mb-3">
+                  欢迎回来，{user.username}
+                </h1>
+                <p className="text-lg text-slate-300 mb-6">
+                  发现你的下一款挚爱游戏
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-4xl md:text-5xl font-bold text-white mb-3">
+                  发现游戏
+                </h1>
+                <p className="text-lg text-slate-300 mb-6">
+                  探索数千款游戏，寻找你的下一次冒险
+                </p>
+              </>
+            )}
+            <div className="flex gap-4">
+              {user ? (
+                <Link href="/recommendations" className="px-6 py-3 bg-[#ff00ff] text-black font-bold rounded-lg hover:bg-[#4ba3d6] transition-colors">
+                  查看推荐
+                </Link>
+              ) : (
+                <Link href="/login" className="px-6 py-3 bg-[#ff00ff] text-black font-bold rounded-lg hover:bg-[#4ba3d6] transition-colors">
+                  通过 Steam 登录
+                </Link>
+              )}
+              <Link href="/discover" className="px-6 py-3 bg-[#1a0a2e]/80 text-white font-bold rounded-lg hover:bg-[#2d0a3e] transition-colors border border-[#2d0a3e]">
+                浏览全部
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <main className="min-h-screen pb-16 px-4 xl:px-40 pt-12">
+        <div className="container mx-auto relative z-10">
+
+          {/* ========== 公开模块 ========== */}
+
+          {/* 1. Top Rated Games - 大屏轮播 (公开) */}
+          <section className="mb-14">
+            <SectionHeader
+              title="高分游戏"
+              subtitle="社区最受欢迎的游戏排行"
+              link="/discover"
+            />
+            <EpicCarousel games={topRatedGames.slice(0, 10)} />
+          </section>
+
+          {/* 2. New & Trending - Netflix轮播 (公开) */}
+          <section className="mb-14">
+            <SectionHeader
+              title="新品与热门"
+              subtitle="最新发布和热门游戏"
+              link="/discover?ordering=-released"
+            />
+            <UbisoftCarousel games={newReleases.slice(0, 20)} />
+          </section>
+
+          {/* 3. Trending Now (Module 3) */}
+          {(trendingGames.length > 0) && (
+            <div className="mb-14">
+              <SectionHeader
+                title="热门趋势"
+                subtitle="本周热门游戏"
+                link="/discover?ordering=-added"
+              />
+              <UbisoftCarousel games={trendingGames} />
+            </div>
+          )}
+
+          {/* 4. 相似游戏 */}
+          {user && similarGames.length > 0 && (
+            <>
+              <PersonalizedSteamSection
+                games={similarGames.slice(0, 4)}
+                title="和您拥有的游戏相似"
+                reason={`基于 ${recentGames[0]?.name || '您的游戏库'}`}
+                type="large"
+              />
+              {similarGames.length > 4 && (
+                <PersonalizedSteamSection
+                  games={similarGames.slice(4, 12)}
+                  title="更多类似游戏"
+                  reason="基于您游戏历史的个性化推荐"
+                  type="standard"
+                />
+              )}
+            </>
+          )}
+
+          {/* 5. 游戏节特别入口 (带动态手柄) */}
+          <FestivalHeroSection />
+
+          {/* 6. 专属主站推荐：SixTower */}
+          <section className="mb-16">
+            <SectionHeader
+              title="SixTower 核心精选"
+              subtitle="顶级算法驱动的精品游戏推荐"
+            />
+            <SixTowerBanner />
+          </section>
+
+          {/* ========== 登录用户个性化模块 ========== */}
+
+          {/* ========== 个性化场景轮播（登录/未登录都可显示）========== */}
+          <div id="personalized-scenes" className="scroll-mt-24">
+            {scenes.length > 0 && (
+              <SceneCarouselSection
+                scenes={scenes}
+                activeIndex={activeSceneIndex}
+                setActiveIndex={setActiveSceneIndex}
+              />
+            )}
+          </div>
+
+          {/* 6. Popular Games You Might Like (替换 For You) */}
+          {user && popularNotOwned.length > 0 && (
+            <div className="mb-14">
+              <SectionHeader
+                title="您可能会喜欢的游戏"
+                subtitle="您尚未拥有的热门游戏"
+                link="/recommendations"
+              />
+              <UbisoftCarousel games={popularNotOwned} />
+            </div>
+          )}
+
+
+          {/* 8. Based on Your Genre Preferences (替换 Explore Genres) */}
+          {Object.keys(genreSpotlight).length > 0 && (
+            <GenreCompactShowcase genreSpotlight={genreSpotlight} />
+          )}
+
+          {/* 9. 专业页脚 (补充) */}
+          <Footer />
+
+          {/* 未登录提示 */}
+          {!user && Object.keys(genreSpotlight).length === 0 && (
+            <div className="text-center py-16 px-4">
+              <div className="inline-block bg-[#1a0a2e] rounded-xl border border-[#2d0a3e] p-8 max-w-md">
+                <h3 className="text-2xl font-bold text-white mb-3">登录获取个性化推荐</h3>
+                <p className="text-slate-400 mb-6">连接您的 Steam 账号获取基于您游戏库的个性化推荐</p>
+                <Link href="/login" className="inline-block px-6 py-3 bg-[#ff00ff] text-black font-bold rounded-lg hover:bg-[#d900d9] transition-colors">
+                  使用 Steam 登录
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      <style jsx>{`
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+    </>
+  );
+}
