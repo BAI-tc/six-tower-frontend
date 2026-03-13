@@ -1,13 +1,13 @@
 {
   "/_not-found": "app/_not-found.js",
   "/auth/steam/callback/page": "app/auth/steam/callback/page.js",
+  "/login/page": "app/login/page.js",
   "/discover/page": "app/discover/page.js",
   "/festival/page": "app/festival/page.js",
-  "/login/page": "app/login/page.js",
-  "/page": "app/page.js",
-  "/search/page": "app/search/page.js",
-  "/profile/page": "app/profile/page.js",
-  "/recommendations/page": "app/recommendations/page.js",
   "/home/page": "app/home/page.js",
+  "/profile/page": "app/profile/page.js",
+  "/page": "app/page.js",
+  "/recommendations/page": "app/recommendations/page.js",
+  "/search/page": "app/search/page.js",
   "/games/[id]/page": "app/games/[id]/page.js"
 }

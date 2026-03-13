@@ -111,7 +111,7 @@ const getDynamicCopy = (topPreferences) => {
   };
 }
 
-const ULTIM_API_BASE = process.env.NEXT_PUBLIC_ULTIM_API_URL || "http://localhost:8080/api/v1"
+const ULTIM_API_BASE = process.env.NEXT_PUBLIC_ULTIM_API_URL || "https://tian.fourever.top/api/v1"
 
 // 辅助函数：从推荐数据中提取所有游戏（去重）
 function extractAllRecommendedGames(recommendations) {

@@ -5,7 +5,7 @@ import { Sparkles, Gamepad2, ChevronRight, TrendingUp, Star, Info } from "lucide
 import { cn } from "@/utils/cn"
 
 // API基础URL
-const ULTIM_API_BASE = process.env.NEXT_PUBLIC_ULTIM_API_URL || "http://localhost:8080/api/v1"
+const ULTIM_API_BASE = process.env.NEXT_PUBLIC_ULTIM_API_URL || "https://tian.fourever.top/api/v1"
 
 // 玩家偏好展示组件
 export function PlayerPreferenceCard({ steamId, className }) {
