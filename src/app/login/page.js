@@ -123,7 +123,8 @@ export default function LoginPage() {
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch(`${ULTIM_API_BASE}/steam/url`);
+      const origin = window.location.origin;
+      const response = await fetch(`${ULTIM_API_BASE}/steam/url?frontend_origin=${encodeURIComponent(origin)}`);
       const data = await response.json();
 
       if (data.url) {

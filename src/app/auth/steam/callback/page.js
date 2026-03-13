@@ -42,9 +42,9 @@ export default function SteamCallback() {
 
     setStatus('success');
 
-    // 跳转到首页或推荐页，使用 window.location 强制刷新页面以更新 Header
+    // 跳转到首页，使用 window.location 强制刷新页面以更新 Header
     setTimeout(() => {
-      window.location.href = '/recommendations';
+      window.location.href = '/home';
     }, 500);
   }, [searchParams, router]);
 
