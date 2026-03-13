@@ -12,6 +12,7 @@ import { fetchSceneInfo, fetchTrendingGames, fetchPopularGames } from '@/api/rec
 import { FestivalHeroSection } from '@/components/festival/hero-section';
 // 六塔模型权重配置
 import { WEIGHT_PRESETS, fetchWeightedRecommendationsWithWeights, deduplicateGames, MODULE_CONFIG } from '@/api/six-tower';
+import { SmartImage } from '@/components/common/smart-image';
 
 // ============ API Functions ============
 
@@ -125,9 +126,10 @@ function NetflixCard({ game }) {
   return (
     <Link href={`/games/${appId}`} className="block group relative">
       <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-[#0e141d] transition-all duration-300">
-        <img
+        <SmartImage
           src={displayCoverUrl}
           alt={name}
+          gameid={appId}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           loading="lazy"
         />
@@ -189,9 +191,10 @@ function FeaturedCard({ game, reason }) {
   return (
     <Link href={`/games/${appId}`} className="block group flex-shrink-0 w-[320px] transition-transform duration-300 hover:scale-[1.02]">
       <div className="relative w-[320px] aspect-[16/9] rounded-xl overflow-hidden bg-[#0e141d] shadow-xl">
-        <img
+        <SmartImage
           src={displayCoverUrl}
           alt={name}
+          gameid={appId}
           className="w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
@@ -284,9 +287,10 @@ function EpicCarousel({ games }) {
           className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${idx === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'
             }`}
         >
-          <img
+          <SmartImage
             src={game.background_image}
             alt={game.name || game.title}
+            gameid={game.id}
             className={`w-full h-full object-cover transition-transform duration-[10000ms] ease-out ${idx === currentIndex ? 'scale-105' : 'scale-100'
               }`}
           />
@@ -337,13 +341,18 @@ function EpicCarousel({ games }) {
                 </div>
               )}
               <p className={`text-slate-300 text-sm mb-6 line-clamp-3 max-w-lg transition-all duration-700 delay-500 transform ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
-                {displayDesc}
+                探索这款神作的独特魅力，直面未知的挑战，在精彩绝伦的游戏世界中开启你的传奇旅程。
               </p>
-              <div className={`flex items-center gap-4 transition-all duration-700 delay-700 transform ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
-
+              <div className={`flex items-center gap-6 transition-all duration-700 delay-700 transform ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+                <Link 
+                  href={`/games/${appId}`}
+                  className="bg-[#ff00ff] text-black px-8 py-3 rounded-full font-bold hover:bg-white transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-[#ff00ff]/20"
+                >
+                  查看详情
+                </Link>
                 <div className="flex flex-col">
-                  <span className="text-[10px] text-white/40 uppercase tracking-widest leading-none">Available on</span>
-                  <span className="text-xs text-white/70 font-bold">Steam / SixTower</span>
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest leading-none">获取渠道</span>
+                  <span className="text-xs text-[#beee11] font-bold">Steam 内获取</span>
                 </div>
               </div>
             </div>
@@ -396,9 +405,10 @@ function SceneGridCard({ game, isLarge = false, sceneType = 'standard' }) {
 
   return (
     <Link href={`/games/${appId}`} className="group relative block w-full h-full overflow-hidden rounded-xl bg-[#0e141d] shadow-lg border border-white/5 hover:border-[#ff00ff]/30 transition-all duration-500">
-      <img
+      <SmartImage
         src={displayCoverUrl}
         alt={name}
+        gameid={appId}
         className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-80 group-hover:opacity-100"
         loading="lazy"
       />
@@ -697,9 +707,10 @@ function PersonalizedSteamSection({ games, title, reason, type = 'standard' }) {
           return (
             <Link key={`${appId}-${idx}`} href={`/games/${appId}`} className="group block">
               <div className="relative aspect-[16/9] rounded-xl overflow-hidden bg-[#1a1f2e] mb-3 shadow-lg border border-white/5 group-hover:border-[#ff00ff]/30 transition-all">
-                <img
+                <SmartImage
                   src={displayCoverUrl}
                   alt={name}
+                  gameid={appId}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   loading="lazy"
                 />
@@ -788,7 +799,7 @@ function GenreCompactShowcase({ genreSpotlight }) {
                     href={`/games/${appId}`}
                     className="relative aspect-[3/4] rounded-xl overflow-hidden group/thumb bg-black shadow-md border border-white/5 hover:border-[#ff00ff]/30 transition-all"
                   >
-                    <img src={displayCoverUrl} alt={gameName} className="w-full h-full object-cover grayscale-[0.2] group-hover/thumb:grayscale-0 transition-all duration-700 group-hover/thumb:scale-110" />
+                    <SmartImage src={displayCoverUrl} alt={gameName} gameid={appId} className="w-full h-full object-cover grayscale-[0.2] group-hover/thumb:grayscale-0 transition-all duration-700 group-hover/thumb:scale-110" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-end p-2.5">
                       <h3 className="text-white font-bold text-xs line-clamp-1 group-hover/thumb:text-[#ff00ff] transition-colors">{gameName}</h3>
                     </div>

@@ -71,13 +71,8 @@ export function FestivalHeroSection() {
                 进入分会场
                 <ChevronRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Link>
-              <button
-                className="rounded-full px-8 py-3 font-bold border-2 border-white/20 hover:bg-white/10 text-white flex items-center transition-colors"
-              >
-                <Gamepad2 className="mr-2 h-5 w-5" />
-                预约门票
-              </button>
             </div>
+
           </div>
 
           {/* 右侧装饰 - 动态游戏手柄 */}

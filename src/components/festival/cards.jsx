@@ -4,6 +4,7 @@ import { ChevronRight, Play } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/utils/cn"
 import { useEffect, useRef, useState } from "react"
+import { SmartImage } from "@/components/common/smart-image"
 
 // ============================================
 // 1. 倾斜画廊卡片 - 水平滚动用
@@ -19,7 +20,7 @@ export function TiltedGalleryCard({ gameid, image, alt, title, category, classNa
         className
       )}
     >
-      <img src={image} alt={displayTitle} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+      <SmartImage src={image} alt={displayTitle} gameid={gameid} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
       
       {/* 渐变遮罩 */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
@@ -164,7 +165,7 @@ export function GameReleaseCard({
     >
       <div className="flex">
         <div className="w-40 md:w-56 h-44 flex-shrink-0 overflow-hidden rounded-lg m-3">
-          <img src={image} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+          <SmartImage src={image} alt={title} gameid={gameid} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
         </div>
         <div className="flex flex-col justify-center px-4 py-3">
           {logo ? (
@@ -209,9 +210,10 @@ export function DarkGameCard({
       )}
     >
       <div className={cn("overflow-hidden", featured ? "h-64" : "h-40")}>
-        <img
+        <SmartImage
           src={image}
           alt={title}
+          gameid={gameid}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
       </div>
@@ -327,7 +329,7 @@ export function JaggedPromoCard({
         }}
       />
       <div className="relative bg-neutral-900 border border-white/5 m-3 rounded-xl p-6 text-center transition-transform group-hover:scale-[1.02]">
-        <img src={image} alt={title} className="w-32 h-32 mx-auto object-contain mb-4 group-hover:scale-110 transition-transform" />
+        <SmartImage src={image} alt={title} gameid={gameid} className="w-32 h-32 mx-auto object-contain mb-4 group-hover:scale-110 transition-transform bg-transparent" />
         <h3 className="text-white font-black text-xl mb-2 group-hover:text-[#ff00ff] transition-colors">{title}</h3>
         <p className="text-neutral-400 text-sm">{description}</p>
       </div>
@@ -385,9 +387,10 @@ export function VideoCard({ gameid, thumbnail, title, duration, className }) {
         className
       )}
     >
-      <img
+      <SmartImage
         src={thumbnail}
         alt={title}
+        gameid={gameid}
         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
@@ -454,9 +457,10 @@ export function BannerGameCard({
         className
       )}
     >
-      <img
+      <SmartImage
         src={image}
         alt={title}
+        gameid={gameid}
         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[2000ms]"
       />
       <div

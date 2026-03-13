@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Sparkles, Gamepad2, ChevronRight, TrendingUp, Star, Info } from "lucide-react"
 import { cn } from "@/utils/cn"
+import { SmartImage } from "@/components/common/smart-image"
 
 // API基础URL
 const ULTIM_API_BASE = process.env.NEXT_PUBLIC_ULTIM_API_URL || "https://tian.fourever.top/api/v1"
@@ -249,13 +250,11 @@ export function PlayerPreferenceCard({ steamId, className }) {
                 >
                   {/* 游戏图片 */}
                   <div className="w-16 h-12 rounded overflow-hidden flex-shrink-0 bg-foreground/10">
-                    <img
-                      src={game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/library_600x900.jpg`}
+                    <SmartImage
+                      src={game.background_image}
                       alt={game.title}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                      onError={(e) => {
-                        e.target.src = "https://placehold.co/600x900/1a1a2e/ffffff?text=No+Image"
-                      }}
+                      gameid={game.gameid}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform bg-transparent"
                     />
                   </div>
 

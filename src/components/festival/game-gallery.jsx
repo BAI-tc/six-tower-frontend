@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Star } from "lucide-react"
 import { cn } from "@/utils/cn"
+import { SmartImage } from "@/components/common/smart-image"
 
 // 主题名称翻译映射
 const themeNameMap = {
@@ -325,9 +326,10 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
                 >
                   {/* 游戏封面 */}
                   <div className="relative aspect-video overflow-hidden">
-                    <img
+                    <SmartImage
                       src={game.image}
                       alt={game.title}
+                      gameid={game.id}
                       className="w-full h-full object-cover transition-transform duration-500"
                       style={{
                         transform: hoveredId === game.id ? "scale(1.1)" : "scale(1)",

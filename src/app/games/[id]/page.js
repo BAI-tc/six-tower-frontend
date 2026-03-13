@@ -32,6 +32,7 @@ const genreTranslationMap = {
 
 import LoadingScreen from '@/app/_components/loading-screen';
 import { RAWG_API_URL, RAWG_API_KEY, API_BASE } from '@/config';
+import { SmartImage } from '@/components/common/smart-image';
 
 // 通过 Go 后端代理获取 Steam 游戏详情（避免 CORS 问题）
 async function fetchGameFromBackend(steamAppId) {
@@ -409,7 +410,7 @@ export default function GameDetailPage() {
       <div className="relative w-full h-[70vh] min-h-[500px] overflow-hidden">
         {game.background_image && (
           <>
-            <img src={game.background_image} alt={game.name} className="w-full h-full object-cover md:object-top dynamic-banner scale-110" />
+            <SmartImage src={game.background_image} alt={game.name} gameid={game.steam_app_id || gameId} className="w-full h-full object-cover md:object-top dynamic-banner scale-110" priority />
             <div className="absolute top-0 left-0 right-0 h-2/3 bg-gradient-to-b from-[#1a0a2e]/60 via-[#1a0a2e]/20 to-transparent backdrop-blur-[60px] opacity-90"></div>
             <div className="absolute inset-x-0 bottom-0 h-full bg-gradient-to-t from-[#1a0a2e] via-[#1a0a2e]/80 to-transparent"></div>
             <div className="absolute inset-0 bg-gradient-to-r from-[#1a0a2e] via-transparent to-[#1a0a2e] opacity-40"></div>
@@ -423,7 +424,7 @@ export default function GameDetailPage() {
           {/* Left Column */}
           <div className="w-full lg:w-[320px] xl:w-[350px] flex-shrink-0 flex flex-col gap-6 items-center lg:items-start">
             <div className="w-[280px] lg:w-full rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.9)] border border-white/10 aspect-[3/4] bg-[#0e141d] relative group">
-              <img src={posterUrl} alt={game.name} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" />
+              <SmartImage src={posterUrl} alt={game.name} gameid={game.steam_app_id || gameId} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" />
             </div>
 
             <div className="bg-[#1a0a2e]/60 backdrop-blur-3xl rounded-[2.5rem] p-8 border border-white/5 shadow-2xl flex flex-col gap-4 w-full">
@@ -522,14 +523,14 @@ export default function GameDetailPage() {
                 {movies.length > 0 ? (
                   <video src={movies[0].data?.max || movies[0].data?.['480']} poster={movies[0].preview} className="w-full h-full object-cover" controls />
                 ) : screenshots.length > 0 ? (
-                  <img src={screenshots[0].image} className="w-full h-full object-cover" />
+                  <SmartImage src={screenshots[0].image} alt={`${game.name} screenshot`} gameid={game.steam_app_id || gameId} className="w-full h-full object-cover" />
                 ) : null}
               </div>
 
               {/* Right Side Spot: 2nd Screenshot */}
               {screenshots.length > 1 && (
                 <div className="aspect-video md:aspect-auto rounded-[2.5rem] overflow-hidden bg-[#0e141d] border border-white/10 hover:border-[#beee11]/30 transition-all group shadow-xl">
-                  <img src={screenshots[movies.length > 0 ? 0 : 1].image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                  <SmartImage src={screenshots[movies.length > 0 ? 0 : 1].image} alt={`${game.name} screenshot 2`} gameid={game.steam_app_id || gameId} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                 </div>
               )}
 
@@ -538,7 +539,7 @@ export default function GameDetailPage() {
                 <div className="md:col-span-3 grid grid-cols-3 gap-4">
                   {screenshots.slice(movies.length > 0 ? 1 : 2, movies.length > 0 ? 4 : 5).map((img, idx) => (
                     <div key={idx} className="relative aspect-video rounded-2xl overflow-hidden bg-[#0e141d] border border-white/5 transition-all hover:border-[#beee11]/30 shadow-lg group">
-                      <img src={img.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" loading="lazy" />
+                      <SmartImage src={img.image} alt={`${game.name} screenshot ${idx + 1}`} gameid={game.steam_app_id || gameId} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" loading="lazy" />
                       {idx === 2 && screenshots.length > 5 && (
                         <div onClick={() => setActiveTab('media')} className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center cursor-pointer hover:bg-black/40 transition-all opacity-0 group-hover:opacity-100">
                           <span className="text-[#beee11] font-black text-xl">+{screenshots.length - 5}</span>
@@ -572,7 +573,7 @@ export default function GameDetailPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in-up">
                   {screenshots.map((s, i) => (
                     <div key={i} className="rounded-2xl overflow-hidden aspect-video border border-white/10 hover:border-[#beee11]/40 transition-all click-feedback shadow-xl group">
-                      <img src={s.image} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" loading="lazy" />
+                      <SmartImage src={s.image} alt={`${game.name} screenshot ${i}`} gameid={game.steam_app_id || gameId} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" loading="lazy" />
                     </div>
                   ))}
                 </div>
