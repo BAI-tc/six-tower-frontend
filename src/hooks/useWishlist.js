@@ -129,7 +129,7 @@ export function WishlistButton({ game }) {
 }
 
 // 获取用户愿望单
-export function useWishlist() {
+export function useWishlist(shouldFetch = true) {
   const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -139,7 +139,7 @@ export function useWishlist() {
       const res = await fetch(`${API_BASE}/wishlist?steam_id=${getCurrentSteamId()}`);
       const data = await res.json();
       if (data.success) {
-        setWishlist(data.data);
+        setWishlist(data.data || []);
       }
     } catch (e) {
       console.error('Failed to fetch wishlist:', e);
@@ -148,8 +148,10 @@ export function useWishlist() {
   }, []);
 
   useEffect(() => {
-    fetchWishlist();
-  }, [fetchWishlist]);
+    if (shouldFetch) {
+      fetchWishlist();
+    }
+  }, [fetchWishlist, shouldFetch]);
 
   return { wishlist, loading, refresh: fetchWishlist };
 }

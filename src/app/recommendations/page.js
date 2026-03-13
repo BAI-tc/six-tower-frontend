@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Background from '../_components/background';
 import CustomImage from '../_components/custom-image';
-import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl } from '@/config';
+import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, getChineseName } from '@/config';
 import LoadingScreen from '@/app/_components/loading-screen';
+import { SmartImage } from '@/components/common/smart-image';
 
 const PAGE_SIZE = 20;
 
@@ -129,10 +130,11 @@ function SteamLandscapeCard({ game, size = 'small' }) {
 
   return (
     <Link href={`/games/${appId}`} className="group relative block aspect-[16/9] w-full bg-[#0e141d] rounded-xl overflow-hidden shadow-2xl transition-all duration-300 hover:scale-[1.02] border border-white/5 hover:border-white/20">
-      <img
+      <SmartImage
         src={coverUrl}
         alt={title}
-        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+        gameid={appId}
+        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100"
       />
       
       {/* 渐变遮罩层 */}
@@ -156,7 +158,7 @@ function SteamLandscapeCard({ game, size = 'small' }) {
           )}
         </div>
         <h3 className="text-white font-bold text-sm line-clamp-1 group-hover:text-[#beee11] transition-colors">
-          {title}
+          {getChineseName(title)}
         </h3>
       </div>
     </Link>
@@ -306,14 +308,15 @@ export default function RecommendationsPage() {
     ]);
 
     // 并行执行 RAWG 数据补全
-    const [enrichedPopular, enrichedSimilar, enrichedGenre] = await Promise.all([
+    const [enrichedPopular, enrichedSimilar, enrichedGenre, enrichedRecent] = await Promise.all([
       enrichWithRAWG(popular.games || []),
       enrichWithRAWG(similar || []),
-      enrichWithRAWG(genre || [])
+      enrichWithRAWG(genre || []),
+      enrichWithRAWG(recent || [])
     ]);
 
     setUserLibrary(library || []);
-    setRecentlyPlayed(recent || []);
+    setRecentlyPlayed(enrichedRecent);
     setPopularNotOwned(enrichedPopular);
     setSimilarGames(enrichedSimilar);
     setGenreGames(enrichedGenre);
@@ -345,12 +348,11 @@ export default function RecommendationsPage() {
               {user.avatar && (
                 <div className="relative">
                    <img src={user.avatar} alt={user.username} className="w-20 h-20 rounded-full border-2 border-[#beee11] p-1 shadow-[0_0_20px_#beee1155]" />
-                   <div className="absolute -bottom-1 -right-1 bg-[#beee11] text-black text-[10px] font-bold px-2 py-0.5 rounded-full">ONLINE</div>
+                   <div className="absolute -bottom-1 -right-1 bg-[#beee11] text-black text-[10px] font-bold px-2 py-0.5 rounded-full">在线</div>
                 </div>
               )}
               <div>
                 <h1 className="text-3xl font-bold text-white mb-2">欢迎回来, <span className="text-[#beee11]">{user.username}</span></h1>
-                <p className="text-slate-400 text-sm tracking-wide">为您准备了基于 30.85% Recall 精准算法推送的 终极游戏地图</p>
               </div>
             </div>
           )}
@@ -374,7 +376,7 @@ export default function RecommendationsPage() {
           />
 
           {/* 4. 最近玩过 (备用/底端展示) */}
-          {recentlyPlayed.length > 0 && (
+          {recentlyPlayed?.length > 0 && (
             <div className="mt-20">
               <div className="flex items-center gap-3 mb-8">
                 <h2 className="text-2xl font-bold text-white tracking-widest">最近玩过</h2>
@@ -389,7 +391,7 @@ export default function RecommendationsPage() {
           )}
 
           {/* 空状态处理 */}
-          {popularNotOwned.length === 0 && similarGames.length === 0 && (
+          {popularNotOwned?.length === 0 && similarGames?.length === 0 && (
             <div className="text-center py-20 bg-black/40 rounded-3xl border border-dashed border-white/10">
               <p className="text-slate-400 text-lg">暂无精准推荐，请确保您的 Steam 库已同步</p>
             </div>

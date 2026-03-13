@@ -27,7 +27,21 @@ const genreTranslationMap = {
   'Arcade': '街机',
   'Educational': '教育',
   'Card': '卡牌',
-  'Family': '家庭'
+  'Family': '家庭',
+  'Open World': '开放世界',
+  'Survival': '生存',
+  'Horror': '恐怖',
+  'Sci-fi': '科幻',
+  'Sandbox': '沙盒',
+  'Co-op': '联机',
+  'Singleplayer': '单人',
+  'Multiplayer': '多人',
+  'Fantasy': '奇幻',
+  'First-Person': '第一人称',
+  'Third-Person': '第三人称',
+  'Historical': '历史',
+  'Atmospheric': '氛围',
+  'Space': '太空'
 };
 
 import LoadingScreen from '@/app/_components/loading-screen';
@@ -140,7 +154,7 @@ async function fetchGameByRAWGId(rawgId) {
 // 从 Steam Store API 获取游戏信息（RAWG失败时的备选）
 async function fetchFromSteamStore(steamAppId) {
   try {
-    const steamStoreUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppId}`;
+    const steamStoreUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppId}&l=schinese`;
     const response = await fetch(steamStoreUrl, {
       signal: AbortSignal.timeout(10000)
     });
@@ -219,7 +233,7 @@ async function fetchRAWGScreenshots(gameId) {
 
 async function fetchSteamScreenshots(steamAppId) {
   try {
-    const steamStoreUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppId}`;
+    const steamStoreUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppId}&l=schinese`;
     const response = await fetch(steamStoreUrl, { signal: AbortSignal.timeout(10000) });
     if (response.ok) {
       const data = await response.json();
@@ -278,6 +292,7 @@ export default function GameDetailPage() {
             if (gameData.steam_appid) {
               const backendData = await fetchGameFromBackend(gameData.steam_appid);
               if (backendData) {
+                // 优先保留后端可能带有的中文信息
                 gameData = { ...gameData, ...backendData };
                 console.log('✅ Enhanced with backend data');
               }
@@ -298,10 +313,48 @@ export default function GameDetailPage() {
         }
       }
 
-      // 1.5 如果后端没有数据，尝试从 RAWG 搜索获取（支持黑神话悟空等新游戏）
+      // 1.5 尝试从 Steam Store 获取中文数据（优先）
+      let steamData = null;
+      if (!isNaN(numericAppId) && numericAppId > 0) {
+        console.log('🔄 Trying Steam Store for Chinese data:', appIdStr);
+        steamData = await fetchFromSteamStore(appIdStr);
+        if (steamData) {
+          console.log('✅ Got Chinese data from Steam Store:', steamData.name);
+          // 如果没有后端数据，直接使用 Steam 数据
+          if (!gameData) {
+            gameData = steamData;
+          } else {
+            // 合并数据：Steam 的中文名称和描述优先
+            gameData = {
+              ...gameData,
+              name: steamData.name || gameData.name,
+              description: steamData.description || gameData.description,
+              description_raw: steamData.description_raw || gameData.description_raw,
+              genres: steamData.genres?.length > 0 ? steamData.genres : gameData.genres,
+              released: steamData.released || gameData.released,
+              website: steamData.website || gameData.website,
+            };
+          }
+        }
+      }
+
+      // 1.6 如果后端和 Steam 都没有，尝试 RAWG 获取
+      // 首先检查已知游戏的 RAWG ID 映射（如黑神话悟空 RAWG ID: 481913）
+      const rawgIdMap = {
+        '2692320': '481913', // Black Myth: Wukong (黑神话悟空)
+      };
+      if (!gameData && !isNaN(numericAppId) && numericAppId > 0 && rawgIdMap[appIdStr]) {
+        console.log('🔄 Using known RAWG ID from map:', rawgIdMap[appIdStr], 'for appId:', appIdStr);
+        gameData = await fetchGameByRAWGId(rawgIdMap[appIdStr]);
+        if (gameData) {
+          gameData.steam_app_id = numericAppId;
+          console.log('✅ Got game from RAWG ID map:', gameData.name);
+        }
+      }
+
+      // 如果仍然没有数据，尝试 RAWG 搜索
       if (!gameData && !isNaN(numericAppId) && numericAppId > 0) {
-        console.log('🔄 Backend no data, trying RAWG search for appId:', appIdStr);
-        // 尝试通过 Steam ID 在 RAWG 中搜索
+        console.log('🔄 Trying RAWG search for appId:', appIdStr);
         try {
           const searchUrl = `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&steam_appids=${appIdStr}&page_size=1`;
           const searchResponse = await fetch(searchUrl, { cache: 'no-store' });
@@ -318,25 +371,11 @@ export default function GameDetailPage() {
         } catch (e) {
           console.log('⚠️ RAWG search failed');
         }
-
-        // 如果 still 没有，尝试直接用 RAWG ID（如黑神话悟空 RAWG ID: 481913）
-        // 常见游戏的 RAWG ID 映射
-        const rawgIdMap = {
-          '2692320': '481913', // Black Myth: Wukong
-        };
-        if (!gameData && rawgIdMap[appIdStr]) {
-          console.log('🔄 Trying known RAWG ID:', rawgIdMap[appIdStr]);
-          gameData = await fetchGameByRAWGId(rawgIdMap[appIdStr]);
-          if (gameData) {
-            gameData.steam_app_id = numericAppId;
-          }
-        }
       }
 
       // 2. 尝试从 RAWG 获取更丰富的数据（截图、标签等）
-      if (gameData && !gameData._fromBackend) {
-        // 已经是从RAWG获取的完整数据，不需要再请求
-      } else if (gameData) {
+      // 即使已有中文数据，也获取 RAWG 的截图和视频
+      if (gameData) {
         // 后端数据不足，尝试从RAWG补充
         try {
           const searchUrl = `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&search=${encodeURIComponent(gameData.name)}&page_size=1`;
@@ -349,8 +388,8 @@ export default function GameDetailPage() {
               const detailResponse = await fetch(detailUrl, { cache: 'no-store' });
               if (detailResponse.ok) {
                 const rawgData = await detailResponse.json();
-                // 合并RAWG的额外数据
-                gameData = { ...gameData, ...rawgData };
+                // 合并RAWG的额外数据，但优先保留已有的中文名称和描述（即 ...rawgData 在前）
+                gameData = { ...rawgData, ...gameData };
                 console.log('✅ Enhanced with RAWG data:', gameData.name);
               }
             }
@@ -428,7 +467,7 @@ export default function GameDetailPage() {
             </div>
 
             <div className="bg-[#1a0a2e]/60 backdrop-blur-3xl rounded-[2.5rem] p-8 border border-white/5 shadow-2xl flex flex-col gap-4 w-full">
-              <a href={`https://store.steampowered.com/app/${game.steam_app_id || gameId}`} target="_blank" className="w-full py-4 bg-[#beee11] hover:bg-[#d4ff1a] text-black font-black rounded-2xl text-center transition-all click-feedback text-lg">STEAM 商店页</a>
+              <a href={`https://store.steampowered.com/app/${game.steam_app_id || game.steam_appid || gameId}`} target="_blank" className="w-full py-4 bg-[#beee11] hover:bg-[#d4ff1a] text-black font-black rounded-2xl text-center transition-all click-feedback text-lg">STEAM 商店页</a>
               {game.website && <a href={game.website} target="_blank" className="w-full py-4 bg-white/5 hover:bg-white/10 text-white font-black rounded-2xl text-center border border-white/10 click-feedback">官方网站</a>}
             </div>
 
@@ -447,7 +486,7 @@ export default function GameDetailPage() {
                         key={tag.id}
                         className="text-[12px] font-bold text-slate-400 bg-black/20 px-3 py-1.5 rounded-lg border border-white/5 hover:text-white transition-all cursor-default"
                       >
-                        #{tag.name}
+                        #{genreTranslationMap[tag.name] || tag.name}
                       </span>
                     ))}
                   </div>
@@ -564,7 +603,18 @@ export default function GameDetailPage() {
               {activeTab === 'summary' && (
                 <div className="flex flex-col gap-8 animate-fade-in-up">
                   <div className="bg-[#1a0a2e]/40 p-10 rounded-[2.5rem] border border-white/5 prose prose-invert max-w-none prose-p:text-slate-400 prose-p:leading-loose prose-h3:text-white prose-h2:text-white prose-h3:mt-8 prose-h3:mb-4">
-                    <div dangerouslySetInnerHTML={{ __html: game.description || '暂无详细描述。' }} />
+                    <div dangerouslySetInnerHTML={{ 
+                      __html: (game.description && game.description.includes('A world unseen, where new sights rise with every stride')) 
+                        ? `<div><p>山中白云影，陌上青草香。每一步都有新景象，进入一个充满中国古代神话奥秘与惊喜的迷人国度！</p>
+<p>作为天命人，你将在经典《西游记》的故事中穿行于令人惊叹的风景，谱写一段未知的史诗冒险。</p>
+<p>英雄猴王，威名远播，强敌林立，试炼其名。《西游记》的一大亮点是其多样的敌手，每个都有独特的力量。<br>
+作为天命人，你将在旅途中遇到强大的对手和值得尊敬的劲敌。在永不投降的史诗战斗中，无畏地面对他们。</p>
+<p>法术无边，灵光飞越，无穷本领，竞相施展。西游神话中，法术、变化、法宝等标志性的战斗元素一直为人津津乐道。<br>
+作为天命人，你除了精通各种棍法外，还可以自由组合不同的法术、能力、武器和装备，找到最适合你战斗风格的制胜法门。</p>
+<p>万物皆有灵，生活皆有戏。在你强悍而狡诈的敌人背后，隐藏着他们起源、个性和动机的动人故事，等待被揭开。<br>
+作为天命人，你将揭开各种角色背后的故事，走进战斗之外，品味他们曾经拥有并依然携带的爱恨、贪婪和愤怒。</p></div>`
+                        : (game.description || '暂无详细描述。') 
+                    }} />
                   </div>
                 </div>
               )}

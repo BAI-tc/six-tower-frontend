@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { API_BASE, ULTIM_API_BASE, getSteamCoverUrl, RAWG_API_URL, RAWG_API_KEY } from '@/config';
+import { API_BASE, ULTIM_API_BASE, getSteamCoverUrl, RAWG_API_URL, RAWG_API_KEY, enrichGamesWithRAWG, getChineseName } from '@/config';
 import { useWishlist } from '@/hooks/useWishlist';
 import LoadingScreen from '@/app/_components/loading-screen';
+import { SmartImage } from '@/components/common/smart-image';
 import {
   fetchUserProfile,
   fetchUserPreferences,
@@ -75,7 +76,7 @@ async function fetchSteamUserInfo(steamId) {
 // 游戏卡片组件
 function GameCard({ game, onRemove, showRemove }) {
   const appId = game.game_data?.id || game.game_id;
-  const name = game.game_data?.name || game.name || '未知游戏';
+  const name = getChineseName(game.game_data?.name || game.name || '未知游戏');
   const coverUrl = game.game_data?.background_image || game.background_image;
 
   return (
@@ -89,18 +90,14 @@ function GameCard({ game, onRemove, showRemove }) {
         </button>
       )}
       <Link href={`/games/${appId}`} className="block group">
-        <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5">
-          {coverUrl ? (
-            <img
-              src={coverUrl}
-              alt={name}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-white/20 text-[10px] bg-white/5">
-              {name}
-            </div>
-          )}
+        <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 relative group">
+          <SmartImage
+            src={coverUrl}
+            alt={name}
+            gameid={appId}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity"></div>
         </div>
          <div className="mt-2 px-1 text-center">
            <p className="text-[11px] font-bold text-blue-100 truncate group-hover:text-blue-400 transition-colors">
@@ -114,12 +111,13 @@ function GameCard({ game, onRemove, showRemove }) {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [library, setLibrary] = useState([]);
   const [recentGames, setRecentGames] = useState([]);
   const [activeTab, setActiveTab] = useState('steam');
-  
+
   const [userProfile, setUserProfile] = useState(null);
   const [dnaStats, setDnaStats] = useState([]);
   const [completeness, setCompleteness] = useState(0);
@@ -127,7 +125,12 @@ export default function ProfilePage() {
   const [history, setHistory] = useState([]);
   const [favorites, setFavorites] = useState([]);
 
-  const { wishlist, loading: wishlistLoading, refresh: refreshWishlist } = useWishlist();
+  const { wishlist, loading: wishlistLoading, refresh: refreshWishlist } = useWishlist(mounted);
+
+  // 防止 SSR hydration 错误
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const steamId = localStorage.getItem('steam_id');
@@ -162,8 +165,15 @@ export default function ProfilePage() {
       fetchInteractionHistory(steamId)
     ]);
 
-    setLibrary(libraryData);
-    setRecentGames(recentData);
+    // 补全 RAWG 图片数据
+    // 对于整个库，我们只补全前 60 个（首页展示的数量），避免请求压力过大
+    const [enrichedLibrary, enrichedRecent] = await Promise.all([
+      enrichGamesWithRAWG(libraryData.slice(0, 60)),
+      enrichGamesWithRAWG(recentData)
+    ]);
+
+    setLibrary([...enrichedLibrary, ...libraryData.slice(60)]);
+    setRecentGames(enrichedRecent);
     setUserProfile(profile.data);
     setDnaStats(prefs.data?.preferred_genres || []);
     setCompleteness(complete.data?.completion_score || 0);
@@ -184,17 +194,17 @@ export default function ProfilePage() {
 
   // 计算游戏库统计
   const calculateStats = () => {
-    const totalGames = library.length;
-    const totalPlaytime = library.reduce((acc, game) => acc + (game.playtime_forever || 0), 0);
+    const totalGames = library?.length || 0;
+    const totalPlaytime = library?.reduce((acc, game) => acc + (game.playtime_forever || 0), 0) || 0;
     const hoursPlayed = Math.round(totalPlaytime / 60);
 
     return {
       totalGames,
       hoursPlayed,
-      recentGamesCount: recentGames.length,
-      wishlistCount: wishlist.length,
-      interactionCount: interactionStats.total_interactions || 0,
-      reviewCount: interactionStats.review_count || 0
+      recentGamesCount: recentGames?.length || 0,
+      wishlistCount: wishlist?.length || 0,
+      interactionCount: interactionStats?.total_interactions || 0,
+      reviewCount: interactionStats?.review_count || 0
     };
   };
 
@@ -263,7 +273,7 @@ export default function ProfilePage() {
             <div className="grid grid-cols-2 gap-4 w-full lg:w-auto">
               {[
                 { label: "游戏珍藏", value: stats.totalGames, color: "text-white" },
-                { label: "探索时长", value: `${stats.hoursPlayed}h`, color: "text-blue-300" },
+                { label: "探索时长", value: `${stats.hoursPlayed}小时`, color: "text-blue-300" },
                 { label: "专业评测", value: stats.reviewCount, color: "text-white" },
                 { label: "游戏足迹", value: stats.interactionCount, color: "text-blue-300" }
               ].map((stat, i) => (
@@ -310,11 +320,11 @@ export default function ProfilePage() {
                   <Gamepad2 className="w-6 h-6 text-blue-400" /> 我的游戏库
                 </h3>
                 <div className="px-3 py-1 bg-white/5 rounded-lg text-xs font-bold text-white/40">
-                   共 {library.length} 款
+                   共 {library?.length || 0} 款
                 </div>
             </div>
-            {library.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+            {library?.length > 0 ? (
+              <div className="grid grid-cols-6 gap-3">
                 {library.slice(0, 60).map(game => (
                   <a
                     key={game.appid}
@@ -323,22 +333,21 @@ export default function ProfilePage() {
                     rel="noopener noreferrer"
                     className="block group"
                   >
-                    <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 mb-3">
-                      <img
-                        src={getSteamCoverUrl(game.appid, 'capsule_231x87')}
+                    <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 mb-3 relative group">
+                      <SmartImage
+                        src={game.background_image || getSteamCoverUrl(game.appid, 'capsule_231x87')}
                         alt={game.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                        }}
+                        gameid={game.appid}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 opacity-80 group-hover:opacity-100"
                       />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity"></div>
                     </div>
                     <p className="text-xs font-bold text-white truncate px-1 group-hover:text-blue-400 transition-colors">
-                      {game.name}
+                      {getChineseName(game.name)}
                     </p>
                     {game.playtime_forever > 0 && (
-                      <p className="text-[10px] font-black text-blue-300/80 px-1 mt-0.5 tracking-wider uppercase">
-                        {Math.round(game.playtime_forever / 60)}h Played
+                      <p className="text-xs font-black text-blue-300/80 px-1 mt-1 tracking-wider">
+                        已游玩 {Math.round(game.playtime_forever / 60)} 小时
                       </p>
                     )}
                   </a>
@@ -347,9 +356,9 @@ export default function ProfilePage() {
             ) : (
                <p className="text-white/30 text-center py-20 italic">您的游戏库空空如也...</p>
             )}
-            {library.length > 60 && (
+            {(library?.length || 0) > 60 && (
               <p className="text-neutral-400 text-center mt-12 text-sm font-medium">
-                以及其他 {library.length - 60} 款精彩作品
+                以及其他 {(library?.length || 0) - 60} 款精彩作品
               </p>
             )}
           </div>
@@ -357,10 +366,15 @@ export default function ProfilePage() {
 
          {activeTab === 'wishlist' && (
            <div className="bg-[#1a1a2e]/60 backdrop-blur-md rounded-xl p-6 border border-white/5">
-             <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3">
-               <Heart className="w-6 h-6 text-red-400 fill-current" /> 愿望清单
-             </h3>
-            {wishlist.length > 0 ? (
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                  <Heart className="w-6 h-6 text-red-400 fill-current" /> 愿望清单
+                </h3>
+                <div className="px-3 py-1 bg-white/5 rounded-lg text-xs font-bold text-white/40">
+                   共 {wishlist?.length || 0} 款
+                </div>
+              </div>
+            {wishlist?.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
                 {wishlist.map(game => (
                   <GameCard
@@ -397,7 +411,7 @@ export default function ProfilePage() {
              <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3">
                <Clock className="w-6 h-6 text-blue-400" /> 最近足迹
              </h3>
-            {recentGames.length > 0 ? (
+            {recentGames?.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
                 {recentGames.map(game => (
                   <a
@@ -407,21 +421,20 @@ export default function ProfilePage() {
                     rel="noopener noreferrer"
                     className="block group"
                   >
-                    <div className="aspect-video rounded-lg overflow-hidden bg-neutral-100 border border-white/5 mb-3">
-                      <img
-                        src={getSteamCoverUrl(game.appid, 'capsule_231x87')}
+                    <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 mb-3 relative group">
+                      <SmartImage
+                        src={game.background_image || getSteamCoverUrl(game.appid, 'capsule_231x87')}
                         alt={game.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                        }}
+                        gameid={game.appid}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 opacity-80 group-hover:opacity-100"
                       />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity"></div>
                     </div>
-                    <p className="text-xs font-bold text-neutral-800 truncate px-1 group-hover:text-[var(--game-gold)] transition-colors">
-                      {game.name}
+                    <p className="text-sm font-bold text-neutral-800 truncate px-1 group-hover:text-[var(--game-gold)] transition-colors">
+                      {getChineseName(game.name)}
                     </p>
-                    <p className="text-[10px] font-black text-neutral-400 px-1 mt-0.5 tracking-wider uppercase">
-                      {Math.round(game.playtime_forever / 60)}h Played
+                    <p className="text-xs font-black text-neutral-400 px-1 mt-1 tracking-wider">
+                      已游玩 {Math.round(game.playtime_forever / 60)} 小时
                     </p>
                   </a>
                 ))}
@@ -437,7 +450,7 @@ export default function ProfilePage() {
              <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3">
                <Star className="w-6 h-6 text-yellow-400 fill-current" /> 心动收藏
              </h3>
-            {favorites.length > 0 ? (
+            {favorites?.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
                 {favorites.map(game => (
                   <GameCard
@@ -467,11 +480,11 @@ export default function ProfilePage() {
                   }}
                    className="px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/10 rounded-xl text-xs font-bold hover:bg-red-500/20 transition-all uppercase tracking-widest active:scale-95"
                >
-                  Wipe Data
+                  清除数据
                </button>
             </div>
             
-            {history.length > 0 ? (
+            {history?.length > 0 ? (
                <div className="space-y-4">
                  {history.slice(0, 30).map((item, idx) => (
                    <div key={idx} className="flex items-center justify-between p-5 bg-[#1a1a2e]/40 rounded-xl border border-white/5">
@@ -484,10 +497,10 @@ export default function ProfilePage() {
                            {item.interaction_type.toUpperCase()[0]}
                         </div>
                          <div>
-                            <p className="text-white text-base font-bold">{item.product_name || `Game ID: ${item.product_id}`}</p>
+                            <p className="text-white text-base font-bold">{getChineseName(item.product_name || `游戏 ID: ${item.product_id}`)}</p>
                             <p className="text-white/40 text-[10px] uppercase tracking-widest mt-1">
-                               Action: <span className="text-white/60">{item.interaction_type}</span> • 
-                               Value: <span className="text-blue-400">{item.interaction_value || 0}</span>
+                               操作: <span className="text-white/60">{item.interaction_type === 'play' ? '游玩' : item.interaction_type === 'view' ? '查看' : '收藏'}</span> • 
+                               分值: <span className="text-blue-400">{item.interaction_value || 0}</span>
                             </p>
                          </div>
                      </div>

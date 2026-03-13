@@ -6,6 +6,43 @@ import Link from 'next/link';
 import { RAWG_API_URL, RAWG_API_KEY } from '@/config';
 import LoadingScreen from '@/app/_components/loading-screen';
 
+// 类型翻译映射
+const genreTranslationMap = {
+  'Action': '动作',
+  'Role-Playing': '角色扮演',
+  'RPG': '角色扮演',
+  'Strategy': '策略',
+  'Adventure': '冒险',
+  'Simulation': '模拟',
+  'Sports': '体育',
+  'Racing': '竞速',
+  'Massively Multiplayer': '多人在线',
+  'Shooter': '射击',
+  'Puzzle': '益智',
+  'Indie': '独立',
+  'Platformer': '平台跳跃',
+  'Fighting': '格斗',
+  'Casual': '休闲',
+  'Arcade': '街机',
+  'Educational': '教育',
+  'Card': '卡牌',
+  'Family': '家庭',
+  'Open World': '开放世界',
+  'Survival': '生存',
+  'Horror': '恐怖',
+  'Sci-fi': '科幻',
+  'Sandbox': '沙盒',
+  'Co-op': '联机',
+  'Singleplayer': '单人',
+  'Multiplayer': '多人',
+  'Fantasy': '奇幻',
+  'First-Person': '第一人称',
+  'Third-Person': '第三人称',
+  'Historical': '历史',
+  'Atmospheric': '氛围',
+  'Space': '太空'
+};
+
 export default function Search() {
   const searchParams = useSearchParams();
   const query = searchParams.get('name') || '';
@@ -35,10 +72,13 @@ export default function Search() {
     setIsLoading(false);
   };
 
+  // 翻译查询关键词
+  const translatedQuery = genreTranslationMap[query] || query;
+
   return (
     <div className="min-h-screen bg-[#1a0a2e] px-4 xl:px-40 py-8 pt-20">
       <h1 className="text-2xl font-bold text-white mb-6">
-        {query ? `搜索结果: "${query}"` : '搜索游戏'}
+        {query ? `搜索结果: "${translatedQuery}"` : '搜索游戏'}
       </h1>
 
       {isLoading ? (

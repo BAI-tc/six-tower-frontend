@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { GameGallery } from "@/components/festival/game-gallery"
-import { RAWG_API_URL, RAWG_API_KEY } from '@/config'
+import { RAWG_API_URL, RAWG_API_KEY, getChineseName } from '@/config'
 import {
   AutoScrollGallery,
   GameReleaseCard,
@@ -255,7 +255,7 @@ export default function FestivalPage() {
     return {
       gameid: game.gameid,
       image: game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/header.jpg`,
-      title: game.title,
+      title: getChineseName(game.title),
       category: simplifyThemeName(theme)
     }
   });
@@ -329,7 +329,7 @@ export default function FestivalPage() {
                     <GameReleaseCard
                       gameid={card1Game.gameid}
                       image={card1Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card1Game.gameid}/header.jpg`}
-                      title={card1Game.title}
+                      title={getChineseName(card1Game.title)}
                       releaseDate={`属于你的${dynamicCopy.secondary.action}`}
                       platform={dynamicCopy.secondary.sub}
                     />
@@ -341,7 +341,7 @@ export default function FestivalPage() {
                     <VideoCard
                       gameid={card2Game.gameid}
                       thumbnail={card2Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card2Game.gameid}/header.jpg`}
-                      title={card2Game.title}
+                      title={getChineseName(card2Game.title)}
                       duration={card2Game.metacritic ? `${card2Game.metacritic}分` : "热门"}
                     />
                   )}
@@ -355,7 +355,7 @@ export default function FestivalPage() {
                     <JaggedPromoCard
                       gameid={card3Game.gameid}
                       image={card3Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card3Game.gameid}/header.jpg`}
-                      title={card3Game.title}
+                      title={getChineseName(card3Game.title)}
                       description={dynamicCopy.primary.sub}
                     />
                   )}
@@ -364,7 +364,7 @@ export default function FestivalPage() {
                   <DarkGameCard
                     gameid={card4Game.gameid}
                     image={card4Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card4Game.gameid}/header.jpg`}
-                    title={card4Game.title}
+                    title={getChineseName(card4Game.title)}
                     description="发现属于你的高光时刻"
                     featured={true}
                   />
@@ -386,7 +386,7 @@ export default function FestivalPage() {
                     <GameReleaseCard
                       gameid={card5Game.gameid}
                       image={card5Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card5Game.gameid}/header.jpg`}
-                      title={card5Game.title}
+                      title={getChineseName(card5Game.title)}
                       releaseDate={card5Game.metacritic ? `Metacritic: ${card5Game.metacritic}` : "热门推荐"}
                       platform={`${card5Game.recommendations?.toLocaleString() || '1,000+'} 人评价`}
                     />
@@ -407,7 +407,7 @@ export default function FestivalPage() {
                     key={game.gameid}
                     gameid={game.gameid}
                     image={game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/header.jpg`}
-                    title={game.title}
+                    title={getChineseName(game.title)}
                     subtitle="属于你的高光之作"
                     variant={index === 0 ? "gradient" : "dark"}
                   />

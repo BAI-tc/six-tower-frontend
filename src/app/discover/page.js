@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { RAWG_API_URL, RAWG_API_KEY } from '@/config';
+import { RAWG_API_URL, RAWG_API_KEY, getChineseName } from '@/config';
 import { useSearchHistory } from '@/hooks/useSearchHistory';
 import { WishlistButton } from '@/hooks/useWishlist';
 import LoadingScreen from '@/app/_components/loading-screen';
@@ -189,18 +189,9 @@ function GameCard({ game }) {
           </div>
         )}
 
-        {price !== null && (
-          <div className="absolute bottom-2 right-2 z-10">
-            {isFree ? (
-              <span className="bg-green-500 text-white text-sm font-bold px-3 py-1 rounded shadow-lg">FREE</span>
-            ) : (
-              <span className="bg-black/90 text-white text-base font-bold px-3 py-1 rounded shadow-lg">${price.toFixed(2)}</span>
-            )}
-          </div>
-        )}
 
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300 z-20">
-          <p className="text-white text-sm font-bold line-clamp-1 mb-1">{game.name}</p>
+          <p className="text-white text-sm font-bold line-clamp-1 mb-1">{getChineseName(game.name)}</p>
           <div className="flex flex-wrap gap-1 mb-1">
             {genres.map((g, idx) => (
               <span key={idx} className="text-[10px] bg-[#ff00ff]/20 text-[#ff00ff] px-1.5 py-0.5 rounded">
@@ -214,7 +205,7 @@ function GameCard({ game }) {
         </div>
       </div>
       <div className="mt-2 text-xs font-bold text-white text-center line-clamp-2 group-hover:text-[#ff00ff] transition-colors">
-        {game.name}
+        {getChineseName(game.name)}
       </div>
       {released && (
         <p className="text-slate-500 text-xs text-center truncate mt-1">
@@ -258,7 +249,7 @@ function GameListItem({ game }) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
-              {game.name}
+              {getChineseName(game.name)}
             </div>
           )}
         </div>
@@ -267,19 +258,12 @@ function GameListItem({ game }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="text-white font-bold text-sm line-clamp-1 group-hover:text-[#ff00ff] transition-colors">
-                {game.name}
+                {getChineseName(game.name)}
               </h3>
               {rating && (
                 <span className="bg-[#ff00ff] text-black text-xs font-bold px-1.5 py-0.5 rounded flex-shrink-0">
                   {Math.round(rating)}
                 </span>
-              )}
-              {price !== null && (
-                isFree ? (
-                  <span className="bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0">FREE</span>
-                ) : (
-                  <span className="text-[10px] text-slate-400 flex-shrink-0">${price.toFixed(2)}</span>
-                )
               )}
             </div>
 
@@ -585,7 +569,7 @@ export default function DiscoverPage() {
         ) : (
           <>
             {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-8">
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-4 mb-8">
                 {games.map(game => (
                   <GameCard key={game.id} game={game} />
                 ))}

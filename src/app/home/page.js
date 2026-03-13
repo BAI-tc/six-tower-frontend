@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Background from '../_components/background';
 import CustomImage from '../_components/custom-image';
 import LoadingScreen from '../_components/loading-screen';
-import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, enrichGamesWithRAWG } from '@/config';
+import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, enrichGamesWithRAWG, getChineseName } from '@/config';
 import { WishlistButton } from '@/hooks/useWishlist';
 // 导入推荐系统 API
 import { fetchSceneInfo, fetchTrendingGames, fetchPopularGames } from '@/api/recommendations';
@@ -13,6 +13,43 @@ import { FestivalHeroSection } from '@/components/festival/hero-section';
 // 六塔模型权重配置
 import { WEIGHT_PRESETS, fetchWeightedRecommendationsWithWeights, deduplicateGames, MODULE_CONFIG } from '@/api/six-tower';
 import { SmartImage } from '@/components/common/smart-image';
+ 
+ // 核心类型翻译映射
+ const genreTranslationMap = {
+  'Action': '动作',
+  'Role-Playing': '角色扮演',
+  'RPG': '角色扮演',
+  'Strategy': '策略',
+  'Adventure': '冒险',
+  'Simulation': '模拟',
+  'Sports': '体育',
+  'Racing': '竞速',
+  'Massively Multiplayer': '多人在线',
+  'Shooter': '射击',
+  'Puzzle': '益智',
+  'Indie': '独立',
+  'Platformer': '平台跳跃',
+  'Fighting': '格斗',
+  'Casual': '休闲',
+  'Arcade': '街机',
+  'Educational': '教育',
+  'Card': '卡牌',
+  'Family': '家庭',
+  'Open World': '开放世界',
+  'Survival': '生存',
+  'Horror': '恐怖',
+  'Sci-fi': '科幻',
+  'Sandbox': '沙盒',
+  'Co-op': '联机',
+  'Singleplayer': '单人',
+  'Multiplayer': '多人',
+  'Fantasy': '奇幻',
+  'First-Person': '第一人称',
+  'Third-Person': '第三人称',
+  'Historical': '历史',
+  'Atmospheric': '氛围',
+  'Space': '太空'
+ };
 
 // ============ API Functions ============
 
@@ -130,9 +167,12 @@ function NetflixCard({ game }) {
           src={displayCoverUrl}
           alt={name}
           gameid={appId}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-80 group-hover:opacity-100"
           loading="lazy"
         />
+
+        {/* 渐变遮罩层 */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity"></div>
 
         {/* 评分 - 左上角 */}
         {rating && (
@@ -159,7 +199,7 @@ function NetflixCard({ game }) {
 
         {/* 底部信息栏 - 悬浮时上滑显示 */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300 z-20">
-          <h3 className="text-white text-sm font-bold line-clamp-1 mb-1">{name}</h3>
+          <h3 className="text-white text-sm font-bold line-clamp-1 mb-1">{getChineseName(name)}</h3>
           {genres.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-1">
               {genres.map((g, idx) => (
@@ -175,7 +215,7 @@ function NetflixCard({ game }) {
         </div>
       </div>
       {/* 卡片下方标题 */}
-      <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-[#ff00ff] transition-colors mt-2 text-center">{name}</h3>
+      <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-[#ff00ff] transition-colors mt-2 text-center">{getChineseName(name)}</h3>
     </Link>
   );
 }
@@ -195,9 +235,13 @@ function FeaturedCard({ game, reason }) {
           src={displayCoverUrl}
           alt={name}
           gameid={appId}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity" />
+        
+        <div className="absolute bottom-4 left-4 right-4 z-20">
+          <h3 className="text-white text-xl font-bold line-clamp-1 drop-shadow-lg group-hover:text-[#ff00ff] transition-colors">{getChineseName(name)}</h3>
+        </div>
 
         {/* 推荐理由 */}
         {reason && (
@@ -230,22 +274,29 @@ function EpicCarousel({ games }) {
   const [gameDetails, setGameDetails] = useState({});
   const intervalRef = useRef(null);
 
-  // Fetch game details
+  // Fetch game details (Chinese names and descriptions)
   useEffect(() => {
     const fetchDetails = async () => {
       const details = {};
-      for (const game of games.slice(0, 5)) {
+      const pool = games.slice(0, 10);
+      await Promise.all(pool.map(async (game) => {
+        const appId = game.steam_appid || game.id || game.product_id;
         try {
-          const res = await fetch(`${RAWG_API_URL}/games/${game.id}?key=${RAWG_API_KEY}`, { cache: 'no-store' });
+          // 优先通过后端获取中文详情
+          const res = await fetch(`${API_BASE}/games/${appId}`, { cache: 'no-store' });
           if (res.ok) {
-            const data = await res.json();
-            details[game.id] = {
-              description: data.description_raw?.substring(0, 150) + '...' || '',
-            };
+            const result = await res.json();
+            if (result.code === 200 && result.data) {
+              const g = result.data;
+              details[appId] = {
+                name: g.app_name || g.title,
+                description: (g.short_description || g.description || "").replace(/<[^>]*>?/gm, '').substring(0, 180) + '...',
+              };
+            }
           }
         } catch (e) { /* ignore */ }
-      }
-      setGameDetails(details);
+      }));
+      setGameDetails(prev => ({ ...prev, ...details }));
     };
     if (games.length > 0) fetchDetails();
   }, [games.length]);
@@ -279,7 +330,7 @@ function EpicCarousel({ games }) {
   const detail = gameDetails[appId];
 
   return (
-    <div className="relative w-full aspect-[21/9] max-h-[500px] rounded-2xl overflow-hidden bg-[#0e141d] mb-10 group">
+    <div className="relative w-full aspect-[21/10] max-h-[600px] rounded-2xl overflow-hidden bg-[#0e141d] mb-10 group">
       {/* 轮播图片集合 */}
       {games.map((game, idx) => (
         <div
@@ -318,30 +369,31 @@ function EpicCarousel({ games }) {
         {games.map((game, idx) => {
           const isActive = idx === currentIndex;
           const gGenres = game.rawg_genres || game.genres || [];
-          const gDetail = gameDetails[game.id];
+          const appId = game.steam_appid || game.id || game.product_id;
+          const gDetail = gameDetails[appId] || gameDetails[game.id];
 
           // 确保描述有中文 fallback
-          const displayDesc = gDetail?.description || (isActive ? "在 SixTower 探索这款神作的独特魅力，直面未知的挑战。" : "");
+          const displayDesc = gDetail?.description || (isActive ? `探索 ${getChineseName(game.name || game.title)} 的独特魅力，直面未知的挑战。` : "");
 
           return (
             <div
               key={`content-${game.id}`}
-              className={`absolute left-0 p-8 md:p-12 max-w-xl flex flex-col justify-center h-full transition-all duration-700 ease-out transform ${isActive ? 'translate-x-0 opacity-100 delay-300' : '-translate-x-12 opacity-0'
+              className={`absolute left-0 p-8 md:p-16 max-w-2xl flex flex-col justify-center h-full transition-all duration-700 ease-out transform ${isActive ? 'translate-x-0 opacity-100 delay-300' : '-translate-x-12 opacity-0'
                 }`}
               style={{ pointerEvents: isActive ? 'auto' : 'none' }}
             >
-              <h2 className="text-3xl md:text-5xl font-bold text-white mb-3 line-clamp-2 drop-shadow-lg">{game.name || game.title}</h2>
+              <h2 className="text-4xl md:text-6xl font-bold text-white mb-4 line-clamp-2 drop-shadow-2xl leading-tight">{getChineseName(detail?.name || name)}</h2>
               {gGenres.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-4">
                   {gGenres.slice(0, 3).map((g, i) => (
                     <span key={i} className="text-xs text-white/90 bg-[#ff00ff]/20 backdrop-blur-sm px-3 py-1 rounded-full border border-[#ff00ff]/30">
-                      {g.name || g}
+                      {genreTranslationMap[g.name || g] || g.name || g}
                     </span>
                   ))}
                 </div>
               )}
               <p className={`text-slate-300 text-sm mb-6 line-clamp-3 max-w-lg transition-all duration-700 delay-500 transform ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
-                探索这款神作的独特魅力，直面未知的挑战，在精彩绝伦的游戏世界中开启你的传奇旅程。
+                {displayDesc}
               </p>
               <div className={`flex items-center gap-6 transition-all duration-700 delay-700 transform ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
                 <Link 
@@ -412,19 +464,19 @@ function SceneGridCard({ game, isLarge = false, sceneType = 'standard' }) {
         className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-80 group-hover:opacity-100"
         loading="lazy"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity" />
 
       <div className={`absolute bottom-0 left-0 right-0 p-4 md:p-6 flex justify-between items-end transition-transform duration-500 transform ${isLarge ? 'translate-y-0' : 'translate-y-1 group-hover:translate-y-0'}`}>
         <div className="flex-1 min-w-0 pr-4">
           <h3 className={`${isLarge ? 'text-2xl md:text-3xl' : 'text-base'} text-white font-bold leading-tight truncate drop-shadow-lg mb-1 group-hover:text-[#ff00ff] transition-colors`}>
-            {name}
+            {getChineseName(name)}
           </h3>
           <p className={`${isLarge ? 'text-sm' : 'text-[10px]'} text-white/50 font-medium tracking-wide truncate`}>
             {genres}
           </p>
         </div>
         <div className={`${isLarge ? 'text-3xl' : 'text-xl'} font-bold opacity-90 transition-all duration-300 text-white group-hover:text-[#ff00ff]`}>
-          {percentage}%
+          {game.metacritic || game.rawg_metacritic || (game.rating ? Math.round(game.rating * 20) : percentage)}
         </div>
       </div>
 
@@ -652,7 +704,7 @@ function SixTowerBanner() {
           <h2 className="text-3xl font-black text-white tracking-widest drop-shadow-md mb-2">黑神话：悟空</h2>
           <p className="text-xl text-white font-bold drop-shadow-md mb-2 pt-2">直面天命</p>
           <div className="absolute bottom-6 left-8 md:left-12 opacity-90 flex items-center gap-2">
-            <span className="text-xl font-black text-white italic tracking-tighter opacity-80">SIX<span className="text-[#ff00ff]">TOWER</span></span>
+            <span className="text-xl font-black text-white italic tracking-tighter opacity-80 uppercase">GAME<span className="text-[#ff00ff]">SCIENCE</span></span>
           </div>
         </div>
 
@@ -668,7 +720,7 @@ function SixTowerBanner() {
           <h2 className="text-3xl font-black text-white tracking-widest drop-shadow-md mb-2">黑神话：钟馗</h2>
           <p className="text-xl text-white font-bold drop-shadow-md mb-2 pt-2">诡道求生</p>
           <div className="absolute bottom-6 left-8 md:left-12 opacity-90 flex items-center gap-2">
-            <span className="text-xl font-black text-white italic tracking-tighter opacity-80">SIX<span className="text-[#ff00ff]">TOWER</span></span>
+            <span className="text-xl font-black text-white italic tracking-tighter opacity-80 uppercase">GAME<span className="text-[#ff00ff]">SCIENCE</span></span>
           </div>
         </div>
 
@@ -711,7 +763,7 @@ function PersonalizedSteamSection({ games, title, reason, type = 'standard' }) {
                   src={displayCoverUrl}
                   alt={name}
                   gameid={appId}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100"
                   loading="lazy"
                 />
 
@@ -728,7 +780,7 @@ function PersonalizedSteamSection({ games, title, reason, type = 'standard' }) {
                 )}
 
                 {/* 渐变遮罩 */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity" />
               </div>
               <div className="px-1">
                 <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-[#ff00ff] transition-colors">{name}</h3>
@@ -744,24 +796,6 @@ function PersonalizedSteamSection({ games, title, reason, type = 'standard' }) {
 
 // 紧凑型分类展示 (不重复样式，更加节制)
 
-// 核心类型翻译映射
-const genreTranslationMap = {
-  'Action': '动作',
-  'Role-Playing': '角色扮演',
-  'RPG': '角色扮演',
-  'Strategy': '策略',
-  'Adventure': '冒险',
-  'Simulation': '模拟',
-  'Sports': '体育',
-  'Racing': '竞速',
-  'Massively Multiplayer': '多人在线',
-  'Shooter': '射击',
-  'Puzzle': '益智',
-  'Indie': '独立',
-  'Platformer': '平台跳跃',
-  'Fighting': '格斗',
-  'Casual': '休闲'
-};
 
 // 紧凑型分类展示 (不重复样式，更加节制)
 function GenreCompactShowcase({ genreSpotlight }) {
@@ -783,7 +817,7 @@ function GenreCompactShowcase({ genreSpotlight }) {
                 {genre}
               </h3>
               <Link href={`/discover?genres=${genre.toLowerCase()}`} className="text-[10px] font-bold text-white/40 hover:text-[#ff00ff] transition-colors uppercase tracking-widest border border-white/10 px-2 py-1 rounded">
-                Browse
+                查看全部
               </Link>
             </div>
 
@@ -791,7 +825,7 @@ function GenreCompactShowcase({ genreSpotlight }) {
               {games.slice(0, 4).map((game, idx) => {
                 const appId = game.steam_appid || game.product_id || game.id || game.appid;
                 const gameName = game.name || game.title || game.app_name;
-                const coverUrl = game.background_image || game.cover_url || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null);
+                const coverUrl = game.background_image || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || game.cover_url;
                 const displayCoverUrl = coverUrl || `https://placehold.co/450x600/1a1a2e/ffffff?text=${encodeURIComponent(gameName?.slice(0, 10) || 'Game')}`;
                 return (
                   <Link
@@ -801,7 +835,7 @@ function GenreCompactShowcase({ genreSpotlight }) {
                   >
                     <SmartImage src={displayCoverUrl} alt={gameName} gameid={appId} className="w-full h-full object-cover grayscale-[0.2] group-hover/thumb:grayscale-0 transition-all duration-700 group-hover/thumb:scale-110" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-end p-2.5">
-                      <h3 className="text-white font-bold text-xs line-clamp-1 group-hover/thumb:text-[#ff00ff] transition-colors">{gameName}</h3>
+                      <h3 className="text-white font-bold text-xs line-clamp-1 group-hover/thumb:text-[#ff00ff] transition-colors">{getChineseName(gameName)}</h3>
                     </div>
                   </Link>
                 )
@@ -1300,82 +1334,116 @@ export default function HomePage() {
       const chronosGames = getModuleGames(chronosResult.recommendations, 12);
       const cultGames = getModuleGames(cultResult.recommendations, 12);
 
-      // 为场景数据也尝试增强图片
-      const sceneGamesBatch = [
+      // 为所有场景数据增强图片
+      const allSceneGames = [
         ...guessYouLikeGames,
         ...genreHotGames,
         ...tribeGames,
-        ...quantumGames
+        ...quantumGames,
+        ...resurrectionGames,
+        ...chronosGames,
+        ...cultGames
       ];
-      if (sceneGamesBatch.length > 0) {
-        await enrichGamesWithRAWG(sceneGamesBatch);
-      }
 
-      // 组装场景数据
-      const sceneList = [
-        {
-          id: 1,
-          label: '猜你喜欢',
-          title: '猜你喜欢',
-          subtitle: '基于您喜欢玩过的游戏推荐',
-          games: guessYouLikeGames,
-          isSixTower: true
-        },
-        {
-          id: 2,
-          label: '类型热门',
-          title: '您喜好的类型热门游戏',
-          subtitle: sceneInfoData?.galaxy_info?.dna
-            ? `${sceneInfoData.galaxy_info.dna}类型爱好者都在玩`
-            : '您喜欢的游戏类型的热门作品',
-          games: genreHotGames,
-          isSixTower: true
-        },
-        {
-          id: 3,
-          label: '同好玩家',
-          title: '与您品味相似的玩家也在玩',
-          subtitle: `查看${sceneInfoData?.cluster_player_count || '2,000'}+位品味相近的玩家现在在玩什么`,
-          games: tribeGames,
-          isSixTower: true
-        },
-        {
-          id: 7,
-          label: '可能会喜欢',
-          title: '您可能会喜欢',
-          subtitle: '不同类型，但基于您的喜好我们认为您会喜欢',
-          games: quantumGames,
-          type: 'quantum',
-          isSixTower: true
-        },
-        {
-          id: 8,
-          label: '怀旧重温',
-          title: '怀旧重温',
-          subtitle: '发现您库中游戏的好伙伴',
-          games: resurrectionGames,
-          type: 'resurrection',
-          isSixTower: true
-        },
-        {
-          id: 9,
-          label: '时间匹配',
-          title: '时间匹配',
-          subtitle: '根据您当前可玩游戏时间推荐',
-          games: chronosGames,
-          type: 'chronos',
-          isSixTower: true
-        },
-        {
-          id: 10,
-          label: '核心精选',
-          title: '核心精选',
-          subtitle: '只有核心玩家才知道的神作',
-          games: cultGames,
-          type: 'cult',
-          isSixTower: true
-        }
-      ].filter(s => s.games && s.games.length >= 1);
+      if (allSceneGames.length > 0) {
+        console.log('[RAWG] Enriching images for', allSceneGames.length, 'scene games');
+        const enrichedSceneGames = await enrichGamesWithRAWG(allSceneGames);
+        const sceneEnrichedMap = new Map(enrichedSceneGames.map(g => [String(g.appid || g.id || g.product_id), g]));
+        
+        const applySceneEnriched = (games) => {
+          return games.map(g => sceneEnrichedMap.get(String(g.appid || g.id || g.product_id)) || g);
+        };
+
+        // 更新各场景变量（重新打包成数组，确保引用更新）
+        const finalGuessYouLike = applySceneEnriched(guessYouLikeGames);
+        const finalGenreHot = applySceneEnriched(genreHotGames);
+        const finalTribe = applySceneEnriched(tribeGames);
+        const finalQuantum = applySceneEnriched(quantumGames);
+        const finalResurrection = applySceneEnriched(resurrectionGames);
+        const finalChronos = applySceneEnriched(chronosGames);
+        const finalCult = applySceneEnriched(cultGames);
+
+        // 组装场景数据
+        const sceneList = [
+          {
+            id: 1,
+            label: '猜你喜欢',
+            title: '猜你喜欢',
+            subtitle: '基于您喜欢玩过的游戏推荐',
+            games: finalGuessYouLike,
+            isSixTower: true
+          },
+          {
+            id: 2,
+            label: '类型热门',
+            title: '您喜好的类型热门游戏',
+            subtitle: sceneInfoData?.galaxy_info?.dna
+              ? `${sceneInfoData.galaxy_info.dna}类型爱好者都在玩`
+              : '您喜欢的游戏类型的热门作品',
+            games: finalGenreHot,
+            isSixTower: true
+          },
+          {
+            id: 3,
+            label: '同好玩家',
+            title: '与您品味相似的玩家也在玩',
+            subtitle: `查看${sceneInfoData?.cluster_player_count || '2,000'}+位品味相近的玩家现在在玩什么`,
+            games: finalTribe,
+            isSixTower: true
+          },
+          {
+            id: 7,
+            label: '可能会喜欢',
+            title: '您可能会喜欢',
+            subtitle: '不同类型，但基于您的喜好我们认为您会喜欢',
+            games: finalQuantum,
+            type: 'quantum',
+            isSixTower: true
+          },
+          {
+            id: 8,
+            label: '怀旧重温',
+            title: '怀旧重温',
+            subtitle: '发现您库中游戏的好伙伴',
+            games: finalResurrection,
+            type: 'resurrection',
+            isSixTower: true
+          },
+          {
+            id: 9,
+            label: '时间匹配',
+            title: '时间匹配',
+            subtitle: '根据您当前可玩游戏时间推荐',
+            games: finalChronos,
+            type: 'chronos',
+            isSixTower: true
+          },
+          {
+            id: 10,
+            label: '核心精选',
+            title: '核心精选',
+            subtitle: '只有核心玩家才知道的神作',
+            games: finalCult,
+            type: 'cult',
+            isSixTower: true
+          }
+        ].filter(s => s.games && s.games.length >= 1);
+
+        console.log('Final sceneList:', sceneList);
+        setScenes(sceneList);
+      } else {
+        // 无需增强时的情况
+        const sceneList = [
+          { id: 1, label: '猜你喜欢', title: '猜你喜欢', subtitle: '基于您喜欢玩过的游戏推荐', games: guessYouLikeGames, isSixTower: true },
+          { id: 2, label: '类型热门', title: '您喜好的类型热门游戏', subtitle: sceneInfoData?.galaxy_info?.dna ? `${sceneInfoData.galaxy_info.dna}类型爱好者都在玩` : '您喜欢的游戏类型的热门作品', games: genreHotGames, isSixTower: true },
+          { id: 3, label: '同好玩家', title: '与您品味相似的玩家也在玩', subtitle: `查看${sceneInfoData?.cluster_player_count || '2,000'}+位品味相近的玩家现在在玩什么`, games: tribeGames, isSixTower: true },
+          { id: 7, label: '可能会喜欢', title: '您可能会喜欢', subtitle: '不同类型，但基于您的喜好我们认为您会喜欢', games: quantumGames, type: 'quantum', isSixTower: true },
+          { id: 8, label: '怀旧重温', title: '怀旧重温', subtitle: '发现您库中游戏的好伙伴', games: resurrectionGames, type: 'resurrection', isSixTower: true },
+          { id: 9, label: '时间匹配', title: '时间匹配', subtitle: '根据您当前可玩游戏时间推荐', games: chronosGames, type: 'chronos', isSixTower: true },
+          { id: 10, label: '核心精选', title: '核心精选', subtitle: '只有核心玩家才知道的神作', games: cultGames, type: 'cult', isSixTower: true }
+        ].filter(s => s.games && s.games.length >= 1);
+        setScenes(sceneList);
+      }
 
       console.log('Final sceneList:', sceneList);
       setScenes(sceneList);
@@ -1517,8 +1585,8 @@ export default function HomePage() {
           {/* 6. 专属主站推荐：SixTower */}
           <section className="mb-16">
             <SectionHeader
-              title="SixTower 核心精选"
-              subtitle="顶级算法驱动的精品游戏推荐"
+              title="GameScience 核心精选"
+              subtitle="精品游戏推荐"
             />
             <SixTowerBanner />
           </section>

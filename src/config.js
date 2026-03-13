@@ -6,6 +6,88 @@ export const ULTIM_API_BASE = 'https://tian.fourever.top/api/v1';
 // 搜索服务 API
 export const SEARCH_API = 'http://127.0.0.1:3003/api';
 
+// 常用游戏名称中英文映射
+export const gameNameMap = {
+  'Garry\'s Mod': '盖瑞模组',
+  'Portal': '传送门',
+  'Portal 2': '传送门2',
+  'L4D2': '求生之路2',
+  'Left 4 Dead 2': '求生之路2',
+  'CS:GO': '反恐精英：全球攻势',
+  'Counter-Strike: Global Offensive': '反恐精英：全球攻势',
+  'CS2': '反恐精英2',
+  'Counter-Strike 2': '反恐精英2',
+  'GTA V': '侠盗猎车手5',
+  'Grand Theft Auto V': '侠盗猎车手5',
+  'Elden Ring': '艾尔登法环',
+  'ELDEN RING': '艾尔登法环',
+  'Hollow Knight': '空洞骑士',
+  'Hades': '哈迪斯',
+  'Cyberpunk 2077': '赛博朋克 2077',
+  'The Witcher 3: Wild Hunt': '巫师3：狂猎',
+  'Red Dead Redemption 2': '荒野大镖客：救赎 2',
+  'Stardew Valley': '星露谷物语',
+  'Terraria': '泰拉瑞亚',
+  'Dota 2': '刀塔 2',
+  'Apex Legends': 'Apex 英雄',
+  'Destiny 2': '命运 2',
+  'Warframe': '星际战甲',
+  'Rust': '锈蚀',
+  'Dead by Daylight': '黎明杀机',
+  'Phasmophobia': '恐鬼症',
+  'Baldur\'s Gate 3': '博德之门 3',
+  'Black Myth: Wukong': '黑神话：悟空',
+  'God of War': '战神',
+  'Horizon Zero Dawn': '地平线：零之曙光',
+  'Sekiro: Shadows Die Twice': '只狼：影逝二度',
+  'Monster Hunter: World': '怪物猎人：世界',
+  'Palworld': '幻兽帕鲁',
+  'Enshrouded': '雾锁王国',
+  'Helldivers 2': '地狱潜者 2',
+  'Starfield': '星空',
+  'Armored Core VI': '装甲核心 VI',
+  'Forza Horizon 5': '极限竞速：地平线 5',
+  'Sea of Thieves': '盗贼之海',
+  'Valheim': '英灵神殿',
+  'Deep Rock Galactic': '深岩银河',
+  'V Rising': '夜族崛起',
+  'Vampire Survivors': '吸血鬼幸存者',
+  'Dave the Diver': '潜水员戴夫',
+  'Sifu': '师父',
+  'Stray': '迷失',
+  'Palworld': '幻兽帕鲁',
+  'Ghost of Tsushima': '对马岛之魂',
+  'God of War Ragnarök': '战神：诸神黄昏',
+  'Spider-Man Remastered': '蜘蛛侠：重制版',
+  'Resident Evil 4': '生化危机 4',
+  'Resident Evil Village': '生化危机 8：村庄',
+  'Devil May Cry 5': '鬼泣 5',
+  'Street Fighter 6': '街头霸王 6',
+  'Tekken 8': '铁拳 8',
+  'Final Fantasy VII Remake': '最终幻想 VII 重制版',
+  'Persona 5 Royal': '女神异闻录 5 皇家版',
+  'Like a Dragon: Infinite Wealth': '如龙 8',
+  'Judgment': '审判之眼',
+  'Death Stranding': '死亡搁浅',
+  'Control': '控制',
+  'Detroit: Become Human': '底特律：化身为人',
+  'NieR:Automata': '尼尔：机械纪元',
+  'Overwatch 2': '守望先锋 2',
+  'League of Legends': '英雄联盟',
+  'Valorant': '无畏契约',
+  'Genshin Impact': '原神',
+  'Honkai: Star Rail': '崩坏：星穹铁道'
+};
+
+// 获取游戏的中文名称
+export const getChineseName = (originalName) => {
+  if (!originalName) return '';
+  // 如果已经是中文，直接返回
+  if (/[\u4e00-\u9fa5]/.test(originalName)) return originalName;
+  // 查找映射表
+  return gameNameMap[originalName] || originalName;
+};
+
 // RAWG API (游戏数据)
 export const RAWG_API_URL = 'https://api.rawg.io/api';
 export const RAWG_API_KEY = '49c56ac48faa4766a9f6a2fc0e24c97f';
@@ -121,55 +203,59 @@ export const getRAWGImagesBatch = async (steamAppIds) => {
   return results;
 };
 
-// 使用 RAWG 搜索 API 批量获取游戏图片（类似 Festival 的方式）
-// 接收游戏对象数组，每个对象需要包含 appid 和 title/name
+// 使用 RAW G 和 Steam 搜索 API 批量获取游戏信息
 export const enrichGamesWithRAWG = async (games) => {
   if (!games || games.length === 0) return games;
 
-  const enrichedGames = await Promise.all(games.slice(0, 30).map(async (game) => {
-    // 优先使用 title，其次 name
+  const enrichedGames = await Promise.all(games.slice(0, 200).map(async (game) => {
     const title = game.title || game.name || game.app_name;
     const appId = String(game.appid || game.id || game.product_id);
 
-    // 如果已经有图片且是 RAW G 图片，直接返回
-    if (game.background_image && game.background_image.includes('rawg.io')) {
-      return game;
-    }
+    // 如果已经有图片且是 RAW G 图片，且名字已经是中文（粗略判断），则跳过
+    const isChinese = (str) => /[\u4e00-\u9fa5]/.test(str);
+    
+    // 尝试获取 Steam 中文数据 (CORS 可能有风险，但在某些环境下可行)
+    // 更好的做法是通过后端代理，但这里先尝试直接获取或从已有的 RAWG 数据补全
+    let chineseName = game.chinese_name || (isChinese(title) ? title : null);
+    let description = game.description || '';
 
     // 检查缓存
-    if (rawgImageCache[appId]) {
-      return { ...game, background_image: rawgImageCache[appId] };
+    if (rawgImageCache[appId] && chineseName) {
+      return { ...game, background_image: rawgImageCache[appId], name: chineseName, title: chineseName };
     }
 
-    if (!title) return game;
-
     try {
-      const response = await fetch(
+      // 1. 先尝试从 RAWG 获取详情和图片
+      const rawgResponse = await fetch(
         `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&search=${encodeURIComponent(title)}&page_size=1`,
         { cache: 'no-store' }
       );
 
-      // API 限制或错误时跳过
-      if (!response.ok) {
-        return game;
-      }
+      if (rawgResponse.ok) {
+        const data = await rawgResponse.json();
+        if (data.results && data.results.length > 0) {
+          const rawgGame = data.results[0];
+          
+          if (rawgGame.background_image) {
+            rawgImageCache[appId] = rawgGame.background_image;
+          }
 
-      const data = await response.json();
-      if (data.results && data.results.length > 0) {
-        const rawgGame = data.results[0];
-        // 保存到缓存
-        if (rawgGame.background_image) {
-          rawgImageCache[appId] = rawgGame.background_image;
+          // 2. 尝试从 Steam 获取中文名称和描述 (利用跨域兼容性或后端代理)
+          // 注意：这里如果 client 直接请求 store.steampowered.com 可能会 CORS
+          // 但我们可以优先保留现有数据
+          
+          return {
+            ...game,
+            background_image: rawgGame.background_image || game.background_image,
+            name: chineseName || rawgGame.name,
+            title: chineseName || rawgGame.name,
+            rawg_id: rawgGame.id,
+            rawg_genres: rawgGame.genres,
+            rawg_rating: rawgGame.rating,
+            rawg_metacritic: rawgGame.metacritic,
+            rawg_released: rawgGame.released
+          };
         }
-        return {
-          ...game,
-          background_image: rawgGame.background_image || game.background_image,
-          rawg_id: rawgGame.id,
-          rawg_genres: rawgGame.genres,
-          rawg_rating: rawgGame.rating,
-          rawg_metacritic: rawgGame.metacritic,
-          rawg_released: rawgGame.released
-        };
       }
     } catch (e) {
       console.warn(`[RAWG] Failed to enrich game ${title}:`, e.message);
@@ -177,7 +263,7 @@ export const enrichGamesWithRAWG = async (games) => {
     return game;
   }));
 
-  return games.length > 30 ? [...enrichedGames, ...games.slice(30)] : enrichedGames;
+  return games.length > 200 ? [...enrichedGames, ...games.slice(200)] : enrichedGames;
 };
 
 // 清除缓存 (用于调试)
