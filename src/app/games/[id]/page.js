@@ -278,23 +278,39 @@ export default function GameDetailPage() {
       // 首先确保使用正确的 appId 格式
       const numericAppId = parseInt(appIdStr, 10);
 
-      // ===== 新增：处理 RAW G id 的情况 =====
-      // RAW G id 通常较小（< 100000），Steam appid 通常较大（> 10000）
-      // 如果传入的 id 看起来像 RAW G id，直接从 RAW G 获取
-      if (!isNaN(numericAppId) && numericAppId > 0 && numericAppId < 100000) {
-        console.log('🔄 Detected possible RAWG ID:', numericAppId, ', fetching directly from RAWG');
+      // 1. 首先尝试从后端获取基础数据（针对 Steam AppId）
+      if (!isNaN(numericAppId) && numericAppId > 0) {
+        console.log('🔄 Fetching game from backend:', appIdStr);
+        gameData = await fetchGameFromBackend(numericAppId);
+        if (gameData) {
+          console.log('✅ Got game from backend:', gameData.name);
+        }
+      }
+
+      // 2. 尝试从 Steam Store 获取中文数据（针对 Steam AppId）
+      if (!gameData && !isNaN(numericAppId) && numericAppId > 0) {
+        console.log('🔄 Trying Steam Store for Chinese data:', appIdStr);
+        const steamData = await fetchFromSteamStore(appIdStr);
+        if (steamData) {
+          console.log('✅ Got Chinese data from Steam Store:', steamData.name);
+          gameData = steamData;
+        }
+      }
+
+      // 3. 如果以上都失败，尝试将 ID 视为 RAW G ID 直接获取
+      if (!gameData && !isNaN(numericAppId) && numericAppId > 0) {
+        console.log('🔄 Trying direct RAWG ID fetch:', numericAppId);
         try {
           gameData = await fetchGameByRAWGId(numericAppId);
           if (gameData) {
-            console.log('✅ Got game from RAWG by ID:', gameData.name);
-            // RAWG 返回的数据中通常包含 steam_appid 字段
-            // 如果有，就用它来获取后端数据补充
+            console.log('✅ Got game from RAWG by direct ID:', gameData.name);
+            // 如果 RAWG 返回了对应的 steam_appid，可以尝试再次用它补充后端/Steam数据
             if (gameData.steam_appid) {
-              const backendData = await fetchGameFromBackend(gameData.steam_appid);
-              if (backendData) {
-                // 优先保留后端可能带有的中文信息
-                gameData = { ...gameData, ...backendData };
-                console.log('✅ Enhanced with backend data');
+              const extraData = await fetchGameFromBackend(gameData.steam_appid) || await fetchFromSteamStore(gameData.steam_appid);
+              if (extraData) {
+                // 合并数据，优先保留 extraData 中的中文信息
+                gameData = { ...gameData, ...extraData };
+                console.log('✅ Enhanced RAWG data with Steam info');
               }
             }
           }
@@ -303,73 +319,46 @@ export default function GameDetailPage() {
         }
       }
 
-      // ===== 以下是原有的 Steam appid 处理逻辑 =====
-      // 1. 首先从后端获取基础数据
+      // 4. 特殊映射处理
       if (!gameData && !isNaN(numericAppId) && numericAppId > 0) {
-        console.log('🔄 Fetching game from backend:', appIdStr);
-        gameData = await fetchGameFromBackend(numericAppId);
-        if (gameData) {
-          console.log('✅ Got game from backend:', gameData.name);
-        }
-      }
-
-      // 1.5 尝试从 Steam Store 获取中文数据（优先）
-      let steamData = null;
-      if (!isNaN(numericAppId) && numericAppId > 0) {
-        console.log('🔄 Trying Steam Store for Chinese data:', appIdStr);
-        steamData = await fetchFromSteamStore(appIdStr);
-        if (steamData) {
-          console.log('✅ Got Chinese data from Steam Store:', steamData.name);
-          // 如果没有后端数据，直接使用 Steam 数据
-          if (!gameData) {
-            gameData = steamData;
-          } else {
-            // 合并数据：Steam 的中文名称和描述优先
-            gameData = {
-              ...gameData,
-              name: steamData.name || gameData.name,
-              description: steamData.description || gameData.description,
-              description_raw: steamData.description_raw || gameData.description_raw,
-              genres: steamData.genres?.length > 0 ? steamData.genres : gameData.genres,
-              released: steamData.released || gameData.released,
-              website: steamData.website || gameData.website,
-            };
+        const rawgIdMap = {
+          '2692320': '481913', // Black Myth: Wukong (黑神话悟空)
+        };
+        if (rawgIdMap[appIdStr]) {
+          console.log('🔄 Using known RAWG ID from map:', rawgIdMap[appIdStr]);
+          gameData = await fetchGameByRAWGId(rawgIdMap[appIdStr]);
+          if (gameData) {
+            gameData.steam_app_id = numericAppId;
           }
         }
       }
 
-      // 1.6 如果后端和 Steam 都没有，尝试 RAWG 获取
-      // 首先检查已知游戏的 RAWG ID 映射（如黑神话悟空 RAWG ID: 481913）
-      const rawgIdMap = {
-        '2692320': '481913', // Black Myth: Wukong (黑神话悟空)
-      };
-      if (!gameData && !isNaN(numericAppId) && numericAppId > 0 && rawgIdMap[appIdStr]) {
-        console.log('🔄 Using known RAWG ID from map:', rawgIdMap[appIdStr], 'for appId:', appIdStr);
-        gameData = await fetchGameByRAWGId(rawgIdMap[appIdStr]);
-        if (gameData) {
-          gameData.steam_app_id = numericAppId;
-          console.log('✅ Got game from RAWG ID map:', gameData.name);
-        }
-      }
-
-      // 如果仍然没有数据，尝试 RAWG 搜索
-      if (!gameData && !isNaN(numericAppId) && numericAppId > 0) {
-        console.log('🔄 Trying RAWG search for appId:', appIdStr);
+      // 5. 最后手段：通过 steam_appids 搜索（必须验证结果以防止返回默认的 GTA V）
+      if (!gameData && !isNaN(numericAppId) && numericAppId > 1000) {
+        console.log('🔄 Trying RAWG search for appId with verification:', appIdStr);
         try {
           const searchUrl = `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&steam_appids=${appIdStr}&page_size=1`;
           const searchResponse = await fetch(searchUrl, { cache: 'no-store' });
           if (searchResponse.ok) {
             const searchResults = await searchResponse.json();
             if (searchResults.results && searchResults.results.length > 0) {
-              const rawgId = searchResults.results[0].id;
-              gameData = await fetchGameByRAWGId(rawgId);
-              if (gameData) {
-                gameData.steam_app_id = numericAppId;
+              const firstResult = searchResults.results[0];
+              // 关键：验证 RAWG 返回的游戏是否真的匹配我们请求的 Steam AppID
+              // 因为 RAWG 在找不到对应 AppID 时会无视 filter 返回全库最火游戏（通常是 GTA V）
+              const resultSteamId = String(firstResult.steam_appid || (firstResult.external_ids?.steam));
+              if (resultSteamId === appIdStr) {
+                gameData = await fetchGameByRAWGId(firstResult.id);
+                if (gameData) {
+                  gameData.steam_app_id = numericAppId;
+                  console.log('✅ Verified search match found:', gameData.name);
+                }
+              } else {
+                console.log('❌ RAWG search returned non-matching top result (possibly GTA V), ignoring.');
               }
             }
           }
         } catch (e) {
-          console.log('⚠️ RAWG search failed');
+          console.log('⚠️ RAWG verification search failed');
         }
       }
 
