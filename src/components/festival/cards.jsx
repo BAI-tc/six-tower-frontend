@@ -5,6 +5,7 @@ import Link from "next/link"
 import { cn } from "@/utils/cn"
 import { useEffect, useRef, useState } from "react"
 import { SmartImage } from "@/components/common/smart-image"
+import { getChineseName } from "@/config"
 
 // ============================================
 // 1. 倾斜画廊卡片 - 水平滚动用
@@ -32,7 +33,7 @@ export function TiltedGalleryCard({ gameid, image, alt, title, category, classNa
             {category}
           </span>
         )}
-        <h4 className="text-white font-bold text-sm truncate">{displayTitle}</h4>
+        <h4 className="text-white font-bold text-sm truncate">{getChineseName(displayTitle)}</h4>
       </div>
     </Link>
   )
@@ -171,7 +172,7 @@ export function GameReleaseCard({
           {logo ? (
             <img src={logo} alt={title} className="h-12 object-contain mb-2" />
           ) : (
-            <h3 className="text-lg font-bold text-neutral-800 dark:text-white mb-2 group-hover:text-[#ff00ff] transition-colors">{title}</h3>
+            <h3 className="text-lg font-bold text-neutral-800 dark:text-white mb-2 group-hover:text-[#ff00ff] transition-colors">{getChineseName(title)}</h3>
           )}
           <p className="text-neutral-700 dark:text-neutral-300 font-semibold">{releaseDate}</p>
           <p className="text-neutral-500 text-xs mt-1">可游玩平台</p>
@@ -218,7 +219,7 @@ export function DarkGameCard({
         />
       </div>
       <div className="p-4">
-        <h3 className="text-white font-bold text-lg mb-2 group-hover:text-[#ff00ff] transition-colors">{title}</h3>
+        <h3 className="text-white font-bold text-lg mb-2 group-hover:text-[#ff00ff] transition-colors">{getChineseName(title)}</h3>
         <p className="text-neutral-300 text-sm leading-relaxed">{description}</p>
       </div>
     </Link>
@@ -330,7 +331,7 @@ export function JaggedPromoCard({
       />
       <div className="relative bg-neutral-900 border border-white/5 m-3 rounded-xl p-6 text-center transition-transform group-hover:scale-[1.02]">
         <SmartImage src={image} alt={title} gameid={gameid} className="w-32 h-32 mx-auto object-contain mb-4 group-hover:scale-110 transition-transform bg-transparent" />
-        <h3 className="text-white font-black text-xl mb-2 group-hover:text-[#ff00ff] transition-colors">{title}</h3>
+        <h3 className="text-white font-black text-xl mb-2 group-hover:text-[#ff00ff] transition-colors">{getChineseName(title)}</h3>
         <p className="text-neutral-400 text-sm">{description}</p>
       </div>
     </Link>
@@ -400,7 +401,7 @@ export function VideoCard({ gameid, thumbnail, title, duration, className }) {
         </div>
       </div>
       <div className="absolute bottom-0 left-0 right-0 p-6">
-        <h3 className="text-white font-bold text-xl mb-1 group-hover:text-[#ff00ff] transition-colors">{title}</h3>
+        <h3 className="text-white font-bold text-xl mb-1 group-hover:text-[#ff00ff] transition-colors">{getChineseName(title)}</h3>
         {duration && <p className="text-[#fbbf24] font-bold text-sm tracking-wider uppercase">{duration}</p>}
       </div>
     </Link>
@@ -475,7 +476,7 @@ export function BannerGameCard({
         {logo ? (
           <img src={logo} alt={title} className="h-16 object-contain w-fit mb-4" />
         ) : (
-          <h3 className="text-white font-black text-3xl mb-2 group-hover:text-[#ff00ff] transition-colors">{title}</h3>
+          <h3 className="text-white font-black text-3xl mb-2 group-hover:text-[#ff00ff] transition-colors">{getChineseName(title)}</h3>
         )}
         {subtitle && <p className="text-white/80 mb-8 max-w-md leading-relaxed">{subtitle}</p>}
         <div className="px-8 py-3 bg-[#ff00ff] text-black font-black rounded-full hover:bg-white transition-all w-fit inline-flex items-center gap-2 text-sm shadow-xl">

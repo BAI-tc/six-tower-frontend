@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ChevronLeft, ChevronRight, Star } from "lucide-react"
 import { cn } from "@/utils/cn"
 import { SmartImage } from "@/components/common/smart-image"
+import { getChineseName } from "@/config"
 
 // 主题名称翻译映射
 const themeNameMap = {
@@ -180,7 +181,7 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
 
       return {
         id: game.gameid,
-        title: game.title,
+        title: getChineseName(game.title),
         category: translatedTheme || "为你推荐",
         image: game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/library_600x900.jpg`,
         featured: index < 3,
@@ -191,6 +192,7 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
     }
     return {
       ...game,
+      title: getChineseName(game.title),
       rating: game.rating || "4.8"
     }
   }) : defaultGames
