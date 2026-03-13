@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 // Use Go backend for wishlist
-const API_BASE = 'http://127.0.0.1:8080/api/v1';
+const API_BASE = 'https://tian.fourever.top/api/v1';
 
 // 获取当前用户steam_id
 function getCurrentSteamId() {

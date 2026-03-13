@@ -1,8 +1,8 @@
 // API 配置
 // ULTIM Golang 高并发/低延迟 API 服务 (统一后端)
 // 注意：Python 后端 (3001) 已弃用，所有 API 都通过 Go 后端 (8080) 提供
-export const API_BASE = 'http://127.0.0.1:8080/api/v1';
-export const ULTIM_API_BASE = 'http://127.0.0.1:8080/api/v1';
+export const API_BASE = 'https://tian.fourever.top/api/v1';
+export const ULTIM_API_BASE = 'https://tian.fourever.top/api/v1';
 // 搜索服务 API
 export const SEARCH_API = 'http://127.0.0.1:3003/api';
 
