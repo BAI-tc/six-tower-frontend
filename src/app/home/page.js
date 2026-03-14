@@ -971,493 +971,222 @@ export default function HomePage() {
       fetchTrendingGames(10, 'week')
     ]);
 
-    // 类型专题 - 使用非六塔 API
+    // 类型专题 - 使用非六塔 API（添加去重防止跨类型重复）
     const genres = ['动作', '角色扮演', '策略', '冒险', '模拟'];
     const genrePromises = genres.map(g => fetchPopularGames(8, g));
     const genreResults = await Promise.all(genrePromises);
     const genreObj = {};
+    const usedGenreGameIds = new Set(); // 跨类型去重
     genres.forEach((g, i) => {
       if (genreResults[i]?.games?.length > 0) {
-        genreObj[g] = genreResults[i].games;
+        // 只添加不在其他类型中出现的游戏
+        const uniqueGames = (genreResults[i].games || []).filter(game => {
+          const gameId = game.appid || game.id || game.product_id;
+          if (usedGenreGameIds.has(String(gameId))) return false;
+          usedGenreGameIds.add(String(gameId));
+          return true;
+        }).slice(0, 4); // 每个类型最多4个
+        if (uniqueGames.length > 0) {
+          genreObj[g] = uniqueGames;
+        }
       }
     });
 
-    // 加载默认场景 - 使用非六塔 API
-    let sceneList = [];
-    try {
-      const [tribeRes, quantumRes, resurrectionRes, chronosRes, cultRes] = await Promise.all([
-        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=3&topk=${MODULE_CONFIG.tribe.topk}&offset=${MODULE_CONFIG.tribe.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
-        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=7&topk=${MODULE_CONFIG.quantum.topk}&offset=${MODULE_CONFIG.quantum.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
-        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=8&topk=${MODULE_CONFIG.resurrection.topk}&offset=${MODULE_CONFIG.resurrection.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
-        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=9&topk=${MODULE_CONFIG.chronos.topk}&offset=${MODULE_CONFIG.chronos.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
-        fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=10&topk=${MODULE_CONFIG.cult.topk}&offset=${MODULE_CONFIG.cult.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] }))
-      ]);
-
-      // 使用 enrichGamesWithRAWG 获取 RAW G 高清图片（类似 Festival 的方式）
-      const allBackendGames = [
-        ...(tribeRes.recommendations || []),
-        ...(quantumRes.recommendations || []),
-        ...(resurrectionRes.recommendations || []),
-        ...(chronosRes.recommendations || []),
-        ...(cultRes.recommendations || [])
-      ];
-
-      if (allBackendGames.length > 0) {
-        console.log('[RAWG] Enriching images for', allBackendGames.length, 'backend games');
-        const enrichedGames = await enrichGamesWithRAWG(allBackendGames);
-
-        // 将增强后的游戏数据分配回各个场景
-        const enrichedMap = new Map(enrichedGames.map(g => [g.appid || g.id, g]));
-        const applyEnriched = (games) => {
-          return games.map(g => enrichedMap.get(g.appid || g.id) || g);
-        };
-
-        tribeRes.recommendations = applyEnriched(tribeRes.recommendations || []);
-        quantumRes.recommendations = applyEnriched(quantumRes.recommendations || []);
-        resurrectionRes.recommendations = applyEnriched(resurrectionRes.recommendations || []);
-        chronosRes.recommendations = applyEnriched(chronosRes.recommendations || []);
-        cultRes.recommendations = applyEnriched(cultRes.recommendations || []);
-      }
-
-      sceneList = [
-        {
-          id: 1,
-          label: '热门趋势',
-          title: '热门趋势',
-          subtitle: '全服玩家都在玩的游戏',
-          games: trending.games || []
-        },
-        {
-          id: 2,
-          label: '高分游戏',
-          title: '高分游戏',
-          subtitle: '媒体和玩家评分最高的游戏',
-          games: topRated.games || []
-        },
-        {
-          id: 3,
-          label: '社区精选',
-          title: '社区精选',
-          subtitle: '游戏社区最喜爱的游戏',
-          games: tribeRes.recommendations || []
-        },
-        {
-          id: 7,
-          label: '冷门佳作',
-          title: '冷门佳作',
-          subtitle: '被低估的精品游戏',
-          games: quantumRes.recommendations || [],
-          type: 'quantum'
-        },
-        {
-          id: 8,
-          label: '新品上架',
-          title: '新品上架',
-          subtitle: '最新发布的游戏',
-          games: resurrectionRes.recommendations || [],
-          type: 'resurrection'
-        },
-        {
-          id: 9,
-          label: '快玩游戏',
-          title: '快玩游戏',
-          subtitle: '适合短时间游玩的游戏',
-          games: chronosRes.recommendations || [],
-          type: 'chronos'
-        },
-        {
-          id: 10,
-          label: '经典游戏',
-          title: '经典游戏',
-          subtitle: '核心玩家心中的神作',
-          games: cultRes.recommendations || [],
-          type: 'cult'
-        }
-      ].filter(s => s.games && s.games.length >= 1);
-
-    } catch (error) {
-      console.error('Error loading default scenes:', error);
-    }
-
-    // 设置所有数据
+    // 优先设置核心模块并关闭加载动画，提升首屏交互速度
     setTopRatedGames(topRated.games || []);
     setNewReleases(newReleasesData || []);
     setTrendingGames(trending.games || []);
     setGenreSpotlight(genreObj);
-    setScenes(sceneList);
-
     setIsLoading(false);
+    console.log('[Home] Guest core modules loaded, loading screen dismissed');
+
+    // 加载默认场景 - 使用非六塔 API (后台异步处理)
+    (async () => {
+      try {
+        const [tribeRes, quantumRes, resurrectionRes, chronosRes, cultRes] = await Promise.all([
+          fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=3&topk=${MODULE_CONFIG.tribe.topk}&offset=${MODULE_CONFIG.tribe.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+          fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=7&topk=${MODULE_CONFIG.quantum.topk}&offset=${MODULE_CONFIG.quantum.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+          fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=8&topk=${MODULE_CONFIG.resurrection.topk}&offset=${MODULE_CONFIG.resurrection.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+          fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=9&topk=${MODULE_CONFIG.chronos.topk}&offset=${MODULE_CONFIG.chronos.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] })),
+          fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=10&topk=${MODULE_CONFIG.cult.topk}&offset=${MODULE_CONFIG.cult.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] }))
+        ]);
+
+        // 使用 enrichGamesWithRAWG 获取 RAW G 高清图片
+        const allBackendGames = [
+          ...(tribeRes.recommendations || []),
+          ...(quantumRes.recommendations || []),
+          ...(resurrectionRes.recommendations || []),
+          ...(chronosRes.recommendations || []),
+          ...(cultRes.recommendations || [])
+        ];
+
+        if (allBackendGames.length > 0) {
+          const enrichedGames = await enrichGamesWithRAWG(allBackendGames);
+          const enrichedMap = new Map(enrichedGames.map(g => [String(g.appid || g.id || g.product_id), g]));
+          const applyEnriched = (games) => games.map(g => enrichedMap.get(String(g.appid || g.id || g.product_id)) || g);
+
+          tribeRes.recommendations = applyEnriched(tribeRes.recommendations || []);
+          quantumRes.recommendations = applyEnriched(quantumRes.recommendations || []);
+          resurrectionRes.recommendations = applyEnriched(resurrectionRes.recommendations || []);
+          chronosRes.recommendations = applyEnriched(chronosRes.recommendations || []);
+          cultRes.recommendations = applyEnriched(cultRes.recommendations || []);
+        }
+
+        const sceneList = [
+          { id: 1, label: '热门趋势', title: '热门趋势', subtitle: '全服玩家都在玩的游戏', games: trending.games || [] },
+          { id: 2, label: '高分游戏', title: '高分游戏', subtitle: '媒体和玩家评分最高的游戏', games: topRated.games || [] },
+          { id: 3, label: '社区精选', title: '社区精选', subtitle: '游戏社区最喜爱的游戏', games: tribeRes.recommendations || [] },
+          { id: 7, label: '冷门佳作', title: '冷门佳作', subtitle: '被低估的精品游戏', games: quantumRes.recommendations || [], type: 'quantum' },
+          { id: 8, label: '新品上架', title: '新品上架', subtitle: '最新发布的游戏', games: resurrectionRes.recommendations || [], type: 'resurrection' },
+          { id: 9, label: '快玩游戏', title: '快玩游戏', subtitle: '适合短时间游玩的游戏', games: chronosRes.recommendations || [], type: 'chronos' },
+          { id: 10, label: '经典游戏', title: '经典游戏', subtitle: '核心玩家心中的神作', games: cultRes.recommendations || [], type: 'cult' }
+        ].filter(s => s.games && s.games.length >= 1);
+
+        setScenes(sceneList);
+        console.log('[Home] Guest background scenes loaded');
+      } catch (error) {
+        console.error('Error loading default background scenes:', error);
+      }
+    })();
   };
 
-  // 登录用户数据加载（全六塔模型 + 去重）
+  // 登录用户数据加载 (双阶段流式加载优化)
   const loadAllData = async (steamId) => {
     setIsLoading(true);
-
-    // 全局去重集合
+    const startTime = Date.now();
     const usedGameIds = new Set();
 
     try {
-      // 第一批：六塔模型核心推荐（并行请求，带权重）
-      const [topRatedResult, newReleasesResult] = await Promise.all([
-        // 高分游戏 - 弱化个性化，强化质量基因(Prof)与全局热度
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.highRated.topk,
-          WEIGHT_PRESETS.highRated,
-          MODULE_CONFIG.highRated.offset
-        ),
-        // 新品热卖 - 极高热度权重，引入分群热度捕捉垂直圈子爆款
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.newReleases.topk,
-          WEIGHT_PRESETS.newReleases,
-          MODULE_CONFIG.newReleases.offset
-        )
+      console.log('[Home] Phase 1: Fetching core fold-1 modules...');
+      
+      // 第一阶段：仅获取首屏核心模块 (高分、新品、趋势、最近玩过)
+      const [
+        topRatedResult, newReleasesResult, sceneInfoData, trendingResult, recentResult
+      ] = await Promise.all([
+        fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.highRated.topk, WEIGHT_PRESETS.highRated, MODULE_CONFIG.highRated.offset),
+        fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.newReleases.topk, WEIGHT_PRESETS.newReleases, MODULE_CONFIG.newReleases.offset),
+        fetchSceneInfo(steamId).catch(() => null),
+        fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.trending.topk, WEIGHT_PRESETS.trending, MODULE_CONFIG.trending.offset),
+        fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.recentPlayed.topk, WEIGHT_PRESETS.recentPlayed, MODULE_CONFIG.recentPlayed.offset)
       ]);
 
-      // 去重处理
+      console.log(`[Home] Phase 1 data received in ${Date.now() - startTime}ms`);
+
+      // 1. 处理核心模块去重
       const topRatedGames = deduplicateGames(topRatedResult.recommendations || [], usedGameIds, 18);
       const newReleasesGames = deduplicateGames(newReleasesResult.recommendations || [], usedGameIds, 18);
-
-      setTopRatedGames(topRatedGames);
-      setNewReleases(newReleasesGames);
-
-      // 获取场景信息
-      let sceneInfoData = null;
-      try {
-        sceneInfoData = await fetchSceneInfo(steamId);
-        setSceneInfo(sceneInfoData);
-      } catch (e) {
-        console.warn('Failed to fetch scene info:', e);
-      }
-
-      // 第二批：六塔模型核心推荐（并行）
-      const [trendingResult, popularNotOwnedResult, similarResult, genreResult, recentResult] = await Promise.all([
-        // 热门趋势 - 结合全局与同好群体的动态趋势
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.trending.topk,
-          WEIGHT_PRESETS.trending,
-          MODULE_CONFIG.trending.offset
-        ),
-        // 热门未拥有 - 在大热榜中剔除已购，SVD保证符合用户大口味
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.popularNotOwned.topk,
-          WEIGHT_PRESETS.popularNotOwned,
-          MODULE_CONFIG.popularNotOwned.offset
-        ),
-        // 相似游戏 - 双核心：语义相似+共购关联
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.similar.topk,
-          WEIGHT_PRESETS.similar,
-          MODULE_CONFIG.similar.offset
-        ),
-        // 类型推荐 - 语义塔(Sem)锁死类型标签，SVD做类内排序 (增加候选量)
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.byGenre.topk,
-          WEIGHT_PRESETS.byGenre,
-          MODULE_CONFIG.byGenre.offset
-        ),
-        // 最近游玩 - 基于最后玩过的游戏，触发强关联(ICF)与题材(Sem)
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.recentPlayed.topk,
-          WEIGHT_PRESETS.recentPlayed,
-          MODULE_CONFIG.recentPlayed.offset
-        )
-      ]);
-
-      // 去重处理
       const trendingGames = deduplicateGames(trendingResult.recommendations || [], usedGameIds, 10);
-      const popularNotOwnedGames = deduplicateGames(popularNotOwnedResult.recommendations || [], usedGameIds, 20);
-      const similarGames = deduplicateGames(similarResult.recommendations || [], usedGameIds, 30);
-      const genreGames = deduplicateGames(genreResult.recommendations || [], usedGameIds, 60);
       const recentGames = deduplicateGames(recentResult.recommendations || [], usedGameIds, 5);
 
-      // 从 RAW G 获取 16:9 高清图片 (使用 enrichGamesWithRAWG，类似 Festival)
-      const allGamesArray = [
-        ...topRatedGames,
-        ...newReleasesGames,
-        ...popularNotOwnedGames,
-        ...trendingGames,
-        ...similarGames,
-        ...genreGames
-      ];
+      // 2. 核心模块图片获取并立即显示
+      const coreGames = [...topRatedGames, ...newReleasesGames, ...trendingGames];
+      const enrichedCore = await enrichGamesWithRAWG(coreGames);
+      const coreMap = new Map(enrichedCore.map(g => [String(g.appid || g.id || g.product_id), g]));
+      const applyCore = games => games.map(g => coreMap.get(String(g.appid || g.id || g.product_id)) || g);
+      
+      setTopRatedGames(applyCore(topRatedGames));
+      setNewReleases(applyCore(newReleasesGames));
+      setTrendingGames(applyCore(trendingGames));
+      setRecentGames(recentGames);
+      setSceneInfo(sceneInfoData);
+      
+      // 关键响应点：首屏核心内容就绪，立即关闭加载动画
+      setIsLoading(false);
+      console.log(`[Home] Initial UI revealed in ${Date.now() - startTime}ms. Continuing background fetch...`);
 
-      console.log('[RAWG] Enriching images for', allGamesArray.length, 'games');
+      // 第三阶段：次要模块与场景屏（后台挂起运行，不阻塞主屏）
+      (async () => {
+        const p2Start = Date.now();
+        const [
+          popularNotOwnedResult, similarResult, genreResult,
+          guessYouLikeResult, genreHotResult, tribeResult, quantumResult, resurrectionResult, chronosResult, cultResult
+        ] = await Promise.all([
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.popularNotOwned.topk, WEIGHT_PRESETS.popularNotOwned, MODULE_CONFIG.popularNotOwned.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.similar.topk, WEIGHT_PRESETS.similar, MODULE_CONFIG.similar.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.byGenre.topk, WEIGHT_PRESETS.byGenre, MODULE_CONFIG.byGenre.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.guessYouLike.topk, WEIGHT_PRESETS.guessYouLike, MODULE_CONFIG.guessYouLike.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.genreHot.topk, WEIGHT_PRESETS.genreHot, MODULE_CONFIG.genreHot.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.tribe.topk, WEIGHT_PRESETS.tribe, MODULE_CONFIG.tribe.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.quantum.topk, WEIGHT_PRESETS.quantum, MODULE_CONFIG.quantum.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.resurrection.topk, WEIGHT_PRESETS.resurrection, MODULE_CONFIG.resurrection.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.chronos.topk, WEIGHT_PRESETS.chronos, MODULE_CONFIG.chronos.offset),
+          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.cult.topk, WEIGHT_PRESETS.cult, MODULE_CONFIG.cult.offset)
+        ]);
 
-      // 使用 enrichGamesWithRAWG 批量获取 RAW G 图片
-      if (allGamesArray.length > 0) {
-        const enrichedGames = await enrichGamesWithRAWG(allGamesArray);
+        console.log(`[Home] Phase 2 background fetches done in ${Date.now() - p2Start}ms`);
 
-        // 按 appid 建立映射
-        const enrichedMap = new Map(enrichedGames.map(g => [String(g.appid || g.id || g.product_id), g]));
-
-        // 应用到各个游戏数组 (不直接修改原数组长度，而是创建新数组)
-        const applyEnriched = (games) => {
-          return games.map(g => enrichedMap.get(String(g.appid || g.id || g.product_id)) || g);
+        const getModuleGamesWithState = (rawList, limit) => {
+          const deduped = deduplicateGames(rawList || [], usedGameIds, limit);
+          return deduped.length >= limit / 2 ? deduped : (rawList || []).slice(0, limit);
         };
 
-        // 更新各个模块数据
-        const enrichedTopRated = applyEnriched(topRatedGames);
-        const enrichedNewReleases = applyEnriched(newReleasesGames);
-        const enrichedPopularNotOwned = applyEnriched(popularNotOwnedGames);
-        const enrichedTrending = applyEnriched(trendingGames);
-        const enrichedSimilar = applyEnriched(similarGames);
-        const enrichedGenre = applyEnriched(genreGames);
+        const popularNotOwnedGames = getModuleGamesWithState(popularNotOwnedResult.recommendations, 20);
+        const similarGames = getModuleGamesWithState(similarResult.recommendations, 30);
+        const genreGames = getModuleGamesWithState(genreResult.recommendations, 60);
+        
+        const guessYouLikeGames = getModuleGamesWithState(guessYouLikeResult.recommendations, 20);
+        const genreHotGames = getModuleGamesWithState(genreHotResult.recommendations, 12);
+        const tribeGames = getModuleGamesWithState(tribeResult.recommendations, 12);
+        const quantumGames = getModuleGamesWithState(quantumResult.recommendations, 12);
+        const resurrectionGames = getModuleGamesWithState(resurrectionResult.recommendations, 12);
+        const chronosGames = getModuleGamesWithState(chronosResult.recommendations, 12);
+        const cultGames = getModuleGamesWithState(cultResult.recommendations, 12);
 
-        setTopRatedGames(enrichedTopRated);
-        setNewReleases(enrichedNewReleases);
-        setPopularNotOwned(enrichedPopularNotOwned);
-        setTrendingGames(enrichedTrending);
-        setSimilarGames(enrichedSimilar);
+        const allP2Games = [
+          ...popularNotOwnedGames, ...similarGames, ...genreGames,
+          ...guessYouLikeGames, ...genreHotGames, ...tribeGames,
+          ...quantumGames, ...resurrectionGames, ...chronosGames, ...cultGames
+        ];
 
-        // 生成类型专题
+        const enrichedAll = await enrichGamesWithRAWG(allP2Games);
+        const allMap = new Map(enrichedAll.map(g => [String(g.appid || g.id || g.product_id), g]));
+        const applyAll = games => games.map(g => allMap.get(String(g.appid || g.id || g.product_id)) || g);
+
+        setPopularNotOwned(applyAll(popularNotOwnedGames));
+        setSimilarGames(applyAll(similarGames));
+
+        // 类型专题生成逻辑 (保留用户的去重逻辑)
+        const enrichedGenre = applyAll(genreGames);
         if (enrichedGenre.length > 0) {
           const grouped = {};
-
-          // 第一次遍历：按类型分组并翻译
+          const usedGenreGameIds = new Set();
           enrichedGenre.forEach(game => {
+            const gameId = game.appid || game.id || game.product_id;
+            if (usedGenreGameIds.has(String(gameId))) return;
             const rawGenres = game.genres?.map(g => g.name || g) || [];
-            let primaryGenre = rawGenres[0] || game.preferred_genre || 'Indie';
-
-            // 翻译
-            primaryGenre = genreTranslationMap[primaryGenre] || primaryGenre;
-
+            let primaryGenre = genreTranslationMap[rawGenres[0] || game.preferred_genre || 'Indie'] || (rawGenres[0] || game.preferred_genre || 'Indie');
             if (!grouped[primaryGenre]) grouped[primaryGenre] = [];
             if (grouped[primaryGenre].length < 4) {
               grouped[primaryGenre].push(game);
+              usedGenreGameIds.add(String(gameId));
             }
           });
-
-          // 第二次遍历：补齐不足 4 个的类型
-          Object.keys(grouped).forEach(genre => {
-            if (grouped[genre].length < 4) {
-              const shortfall = 4 - grouped[genre].length;
-              // 从其他未分配的游戏中借调 (或者直接使用 enrichedGenre 中的其他游戏)
-              const extras = enrichedGenre
-                .filter(g => !grouped[genre].some(existing => (existing.appid || existing.id) === (g.appid || g.id)))
-                .slice(0, shortfall);
-              grouped[genre] = [...grouped[genre], ...extras];
-            }
-          });
-
-          // 确保至少有 3 个分类
-          if (Object.keys(grouped).length < 2 && enrichedGenre.length >= 8) {
-            grouped['热门推荐'] = enrichedGenre.slice(0, 4);
-            grouped['精品必玩'] = enrichedGenre.slice(4, 8);
-            grouped['发现更多'] = enrichedGenre.slice(8, 12);
-          }
-
           setGenreSpotlight(grouped);
         }
 
-        console.log('[RAWG] Enriched home page modules');
-      } else {
-        // 如果没有成功增强，也需要设置基础数据
-        setTrendingGames(trendingGames);
-        setPopularNotOwned(popularNotOwnedGames);
-        setSimilarGames(similarGames);
-      }
+        // 场景数据更新
+        const sceneList = [
+          { id: 1, label: '猜你喜欢', title: '猜你喜欢', subtitle: '基于推荐算法为您量身定制', games: applyAll(guessYouLikeGames), isSixTower: true },
+          { id: 2, label: '类型热门', title: '类型热门', subtitle: sceneInfoData?.galaxy_info?.dna ? `${sceneInfoData.galaxy_info.dna}类型爱好者都在玩` : '深度匹配您的游玩品味', games: applyAll(genreHotGames), isSixTower: true },
+          { id: 3, label: '同好玩家', title: '同好玩家', subtitle: `与您品味相近的玩家也喜欢这些`, games: applyAll(tribeGames), isSixTower: true },
+          { id: 7, label: '跨界尝试', title: '可能会喜欢', subtitle: '跳出舒适区，发现更多可能', games: applyAll(quantumGames), type: 'quantum', isSixTower: true },
+          { id: 8, label: '库中寻宝', title: '怀旧重温', subtitle: '发现您库中游戏的好伙伴', games: applyAll(resurrectionGames), type: 'resurrection', isSixTower: true },
+          { id: 9, label: '随玩随停', title: '时间匹配', subtitle: '根据您的游玩时长习惯推荐', games: applyAll(chronosGames), type: 'chronos', isSixTower: true },
+          { id: 10, label: '骨灰精选', title: '核心精选', subtitle: '只有真正热爱游戏的人才知道', games: applyAll(cultGames), type: 'cult', isSixTower: true }
+        ].filter(s => s.games && s.games.length >= 1);
 
-      // 第三批：场景推荐（全六塔模型）
-      const [guessYouLikeResult, genreHotResult, tribeResult, quantumResult, resurrectionResult, chronosResult, cultResult] = await Promise.all([
-        // 猜你喜欢 - 经典配方：SVD主导，Pop保底
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.guessYouLike.topk,
-          WEIGHT_PRESETS.guessYouLike,
-          MODULE_CONFIG.guessYouLike.offset
-        ),
-        // 类型热门 - 限定语义空间后的热度竞赛
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.genreHot.topk,
-          WEIGHT_PRESETS.genreHot,
-          MODULE_CONFIG.genreHot.offset
-        ),
-        // 同好玩家 - 社会塔核心：完全由同族群(ClusterPop)定义
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.tribe.topk,
-          WEIGHT_PRESETS.tribe,
-          MODULE_CONFIG.tribe.offset
-        ),
-        // 可能会喜欢 - 强化SVD探索性，增加Prof基因相似度
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.quantum.topk,
-          WEIGHT_PRESETS.quantum,
-          MODULE_CONFIG.quantum.offset
-        ),
-        // 怀旧重温 - 基因塔(Prof)锁定老款、低活跃但高评分的星系
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.resurrection.topk,
-          WEIGHT_PRESETS.resurrection,
-          MODULE_CONFIG.resurrection.offset
-        ),
-        // 时间匹配 - 提取Prof中的"时长基因"，匹配用户历史习惯
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.chronos.topk,
-          WEIGHT_PRESETS.chronos,
-          MODULE_CONFIG.chronos.offset
-        ),
-        // 核心精选 - 专注SVD深度偏好与Sem硬核标签
-        fetchWeightedRecommendationsWithWeights(
-          steamId,
-          MODULE_CONFIG.cult.topk,
-          WEIGHT_PRESETS.cult,
-          MODULE_CONFIG.cult.offset
-        )
-      ]);
-
-      // 去重处理 (场景模块)
-      const getModuleGames = (rawList, limit) => {
-        // 对于场景标签页，我们适当放宽去重限制，如果严格去重导致推荐位全空，则允许展示少量重复
-        const deduped = deduplicateGames(rawList || [], usedGameIds, limit);
-        if (deduped.length >= limit / 2) return deduped;
-
-        // 如果去重严重影响数量，返回原始数据的前 limit 个，确保内容不留白
-        return (rawList || []).slice(0, limit);
-      };
-
-      const guessYouLikeGames = getModuleGames(guessYouLikeResult.recommendations, 20);
-      const genreHotGames = getModuleGames(genreHotResult.recommendations, 12);
-      const tribeGames = getModuleGames(tribeResult.recommendations, 12);
-      const quantumGames = getModuleGames(quantumResult.recommendations, 12);
-      const resurrectionGames = getModuleGames(resurrectionResult.recommendations, 12);
-      const chronosGames = getModuleGames(chronosResult.recommendations, 12);
-      const cultGames = getModuleGames(cultResult.recommendations, 12);
-
-      // 为所有场景数据增强图片
-      const allSceneGames = [
-        ...guessYouLikeGames,
-        ...genreHotGames,
-        ...tribeGames,
-        ...quantumGames,
-        ...resurrectionGames,
-        ...chronosGames,
-        ...cultGames
-      ];
-
-      if (allSceneGames.length > 0) {
-        console.log('[RAWG] Enriching images for', allSceneGames.length, 'scene games');
-        const enrichedSceneGames = await enrichGamesWithRAWG(allSceneGames);
-        const sceneEnrichedMap = new Map(enrichedSceneGames.map(g => [String(g.appid || g.id || g.product_id), g]));
+        setScenes(sceneList);
         
-        const applySceneEnriched = (games) => {
-          return games.map(g => sceneEnrichedMap.get(String(g.appid || g.id || g.product_id)) || g);
-        };
+        if (typeof window !== 'undefined' && usedGameIds.size > 0) {
+          sessionStorage.setItem('homepage_shown_ids', JSON.stringify(Array.from(usedGameIds)));
+        }
+        console.log(`[Home] All background content loaded in ${Date.now() - startTime}ms`);
+      })();
 
-        // 更新各场景变量（重新打包成数组，确保引用更新）
-        const finalGuessYouLike = applySceneEnriched(guessYouLikeGames);
-        const finalGenreHot = applySceneEnriched(genreHotGames);
-        const finalTribe = applySceneEnriched(tribeGames);
-        const finalQuantum = applySceneEnriched(quantumGames);
-        const finalResurrection = applySceneEnriched(resurrectionGames);
-        const finalChronos = applySceneEnriched(chronosGames);
-        const finalCult = applySceneEnriched(cultGames);
-
-        // 组装场景数据
-        const sceneList = [
-          {
-            id: 1,
-            label: '猜你喜欢',
-            title: '猜你喜欢',
-            subtitle: '基于您喜欢玩过的游戏推荐',
-            games: finalGuessYouLike,
-            isSixTower: true
-          },
-          {
-            id: 2,
-            label: '类型热门',
-            title: '您喜好的类型热门游戏',
-            subtitle: sceneInfoData?.galaxy_info?.dna
-              ? `${sceneInfoData.galaxy_info.dna}类型爱好者都在玩`
-              : '您喜欢的游戏类型的热门作品',
-            games: finalGenreHot,
-            isSixTower: true
-          },
-          {
-            id: 3,
-            label: '同好玩家',
-            title: '与您品味相似的玩家也在玩',
-            subtitle: `查看${sceneInfoData?.cluster_player_count || '2,000'}+位品味相近的玩家现在在玩什么`,
-            games: finalTribe,
-            isSixTower: true
-          },
-          {
-            id: 7,
-            label: '可能会喜欢',
-            title: '您可能会喜欢',
-            subtitle: '不同类型，但基于您的喜好我们认为您会喜欢',
-            games: finalQuantum,
-            type: 'quantum',
-            isSixTower: true
-          },
-          {
-            id: 8,
-            label: '怀旧重温',
-            title: '怀旧重温',
-            subtitle: '发现您库中游戏的好伙伴',
-            games: finalResurrection,
-            type: 'resurrection',
-            isSixTower: true
-          },
-          {
-            id: 9,
-            label: '时间匹配',
-            title: '时间匹配',
-            subtitle: '根据您当前可玩游戏时间推荐',
-            games: finalChronos,
-            type: 'chronos',
-            isSixTower: true
-          },
-          {
-            id: 10,
-            label: '核心精选',
-            title: '核心精选',
-            subtitle: '只有核心玩家才知道的神作',
-            games: finalCult,
-            type: 'cult',
-            isSixTower: true
-          }
-        ].filter(s => s.games && s.games.length >= 1);
-
-        console.log('Final sceneList:', sceneList);
-        setScenes(sceneList);
-      } else {
-        // 无需增强时的情况
-        const sceneList = [
-          { id: 1, label: '猜你喜欢', title: '猜你喜欢', subtitle: '基于您喜欢玩过的游戏推荐', games: guessYouLikeGames, isSixTower: true },
-          { id: 2, label: '类型热门', title: '您喜好的类型热门游戏', subtitle: sceneInfoData?.galaxy_info?.dna ? `${sceneInfoData.galaxy_info.dna}类型爱好者都在玩` : '您喜欢的游戏类型的热门作品', games: genreHotGames, isSixTower: true },
-          { id: 3, label: '同好玩家', title: '与您品味相似的玩家也在玩', subtitle: `查看${sceneInfoData?.cluster_player_count || '2,000'}+位品味相近的玩家现在在玩什么`, games: tribeGames, isSixTower: true },
-          { id: 7, label: '可能会喜欢', title: '您可能会喜欢', subtitle: '不同类型，但基于您的喜好我们认为您会喜欢', games: quantumGames, type: 'quantum', isSixTower: true },
-          { id: 8, label: '怀旧重温', title: '怀旧重温', subtitle: '发现您库中游戏的好伙伴', games: resurrectionGames, type: 'resurrection', isSixTower: true },
-          { id: 9, label: '时间匹配', title: '时间匹配', subtitle: '根据您当前可玩游戏时间推荐', games: chronosGames, type: 'chronos', isSixTower: true },
-          { id: 10, label: '核心精选', title: '核心精选', subtitle: '只有核心玩家才知道的神作', games: cultGames, type: 'cult', isSixTower: true }
-        ].filter(s => s.games && s.games.length >= 1);
-        setScenes(sceneList);
-      }
-
-      console.log('Final sceneList:', sceneList);
-      setScenes(sceneList);
-      setRecentGames(recentGames);
-
-      // 保存已展示的 ID 供游戏节页面去重 (优先保证首页展示)
-      if (typeof window !== 'undefined' && usedGameIds.size > 0) {
-        sessionStorage.setItem('homepage_shown_ids', JSON.stringify(Array.from(usedGameIds)));
-      }
     } catch (error) {
       console.error('Error loading home data:', error);
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
 

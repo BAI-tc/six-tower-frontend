@@ -203,67 +203,40 @@ export const getRAWGImagesBatch = async (steamAppIds) => {
   return results;
 };
 
-// 使用 RAW G 和 Steam 搜索 API 批量获取游戏信息
+// 使用 RAW G 和 Steam 搜索 API 批量获取游戏信息 (核心性能优化版)
 export const enrichGamesWithRAWG = async (games) => {
   if (!games || games.length === 0) return games;
 
-  const enrichedGames = await Promise.all(games.slice(0, 200).map(async (game) => {
-    const title = game.title || game.name || game.app_name;
+  // 1. 提取所有 Steam AppID
+  const steamAppIds = games
+    .map(g => String(g.appid || g.id || g.product_id))
+    .filter(id => id && id !== 'undefined' && id !== 'null');
+
+  if (steamAppIds.length === 0) return games;
+
+  // 2. 批量获取图片 (利用缓存 + 单次 API 请求)
+  const imageMap = await getRAWGImagesBatch(steamAppIds);
+
+  // 3. 应用数据并补充其他元数据 (异步，但不阻塞核心显示)
+  return games.map(game => {
     const appId = String(game.appid || game.id || game.product_id);
+    const backgroundImage = imageMap[appId];
 
-    // 如果已经有图片且是 RAW G 图片，且名字已经是中文（粗略判断），则跳过
-    const isChinese = (str) => /[\u4e00-\u9fa5]/.test(str);
-    
-    // 尝试获取 Steam 中文数据 (CORS 可能有风险，但在某些环境下可行)
-    // 更好的做法是通过后端代理，但这里先尝试直接获取或从已有的 RAWG 数据补全
-    let chineseName = game.chinese_name || (isChinese(title) ? title : null);
-    let description = game.description || '';
-
-    // 检查缓存
-    if (rawgImageCache[appId] && chineseName) {
-      return { ...game, background_image: rawgImageCache[appId], name: chineseName, title: chineseName };
+    // 如果命中了缓存或批量接口，直接返回增强后的对象
+    if (backgroundImage) {
+      return {
+        ...game,
+        background_image: backgroundImage,
+        // 如果有 steamToRawgCache，补全 rawg_id
+        rawg_id: steamToRawgCache[appId] || game.rawg_id,
+        // 标记为已增强
+        _enriched: true
+      };
     }
 
-    try {
-      // 1. 先尝试从 RAWG 获取详情和图片
-      const rawgResponse = await fetch(
-        `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&search=${encodeURIComponent(title)}&page_size=1`,
-        { cache: 'no-store' }
-      );
-
-      if (rawgResponse.ok) {
-        const data = await rawgResponse.json();
-        if (data.results && data.results.length > 0) {
-          const rawgGame = data.results[0];
-          
-          if (rawgGame.background_image) {
-            rawgImageCache[appId] = rawgGame.background_image;
-          }
-
-          // 2. 尝试从 Steam 获取中文名称和描述 (利用跨域兼容性或后端代理)
-          // 注意：这里如果 client 直接请求 store.steampowered.com 可能会 CORS
-          // 但我们可以优先保留现有数据
-          
-          return {
-            ...game,
-            background_image: rawgGame.background_image || game.background_image,
-            name: chineseName || rawgGame.name,
-            title: chineseName || rawgGame.name,
-            rawg_id: rawgGame.id,
-            rawg_genres: rawgGame.genres,
-            rawg_rating: rawgGame.rating,
-            rawg_metacritic: rawgGame.metacritic,
-            rawg_released: rawgGame.released
-          };
-        }
-      }
-    } catch (e) {
-      console.warn(`[RAWG] Failed to enrich game ${title}:`, e.message);
-    }
+    // 后备方案：保持现状
     return game;
-  }));
-
-  return games.length > 200 ? [...enrichedGames, ...games.slice(200)] : enrichedGames;
+  });
 };
 
 // 清除缓存 (用于调试)
