@@ -108,8 +108,8 @@ export const IMAGE_SIZES = {
   'logo-med': 'logo_med',
 };
 
-// Steam 图片基础 URL
-export const STEAM_IMAGE_BASE = 'https://media.steampowered.com/steamcommunity/public/images/apps';
+// Steam CDN 基础 URL (使用 akamaihd CDN)
+export const STEAM_IMAGE_BASE = 'https://steamcdn-a.akamaihd.net/steam/apps';
 
 // 生成 Steam 封面 URL
 export const getSteamCoverUrl = (appId, size = 'capsule_231x87') => {
@@ -118,12 +118,12 @@ export const getSteamCoverUrl = (appId, size = 'capsule_231x87') => {
 
 // 生成 Steam 库封面 URL (高清)
 export const getSteamLibraryUrl = (appId) => {
-  return `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/library_600x900.jpg`;
+  return `${STEAM_IMAGE_BASE}/${appId}/library_600x900.jpg`;
 };
 
 // 生成 Steam Hero 图片 (460x215)
 export const getSteamHeroUrl = (appId) => {
-  return `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/library_hero.jpg`;
+  return `${STEAM_IMAGE_BASE}/${appId}/library_hero.jpg`;
 };
 
 // 从 RAWG API 获取游戏的 16:9 高清图片
@@ -138,6 +138,14 @@ export const fetchRAWGGamesBatch = async (steamAppIds) => {
 
   // 过滤掉已有缓存图片的
   const uncachedIds = uniqueIds.filter(id => !rawgImageCache[id]);
+  
+  // 创建一个暂存区，用于通过名字预测匹配
+  // 注意：这只是在 steam_appid 缺失时的最后兜底
+  const appIdToNameMap = {};
+  steamAppIds.forEach(id => {
+      // 假设我们能拿到部分游戏的原始数据，但实际上这里只有ID
+      // 后续还是依赖 RAWG 返回的字段更稳
+  });
 
   if (uncachedIds.length === 0) {
     console.log('[RAWG] All images already cached');
@@ -145,35 +153,53 @@ export const fetchRAWGGamesBatch = async (steamAppIds) => {
   }
 
   try {
-    // 使用逗号分隔的 steam_appids 批量查询 (RAWG支持最多500个)
-    // 同时请求 background_image
+    // 使用逗号分隔的 steam_appids 批量查询
     const idsParam = uncachedIds.join(',');
-    const response = await fetch(
-      `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&steam_appids=${idsParam}&page_size=${uncachedIds.length}&fields=id,background_image,short_screenshots,name`,
-      { cache: 'no-store' }
-    );
+    const rawngUrl = `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&steam_appids=${idsParam}&page_size=${uncachedIds.length}&fields=id,background_image,short_screenshots,name,steam_appid`;
+    console.log('[RAWG] Fetching:', rawngUrl.substring(0, 150) + '...');
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data.results && data.results.length > 0) {
-        data.results.forEach(game => {
-          if (game.steam_appid) {
-            const appId = String(game.steam_appid);
-            // 保存steam到rawg的映射
-            steamToRawgCache[appId] = game.id;
-            // 保存图片
-            if (game.background_image) {
-              rawgImageCache[appId] = game.background_image;
-            } else if (game.short_screenshots && game.short_screenshots.length > 0) {
-              rawgImageCache[appId] = game.short_screenshots[0].image;
-            }
-          }
-        });
-        console.log('[RAWG] Fetched images for', data.results.length, 'games');
-      }
+    const response = await fetch(rawngUrl, { cache: 'no-store' });
+
+    if (!response.ok) {
+      console.log('[RAWG] API error:', response.status, response.statusText);
+      return;
     }
-  } catch (error) {
-    console.error('[RAWG] Error batch fetching games:', error);
+
+    const data = await response.json();
+    console.log('[RAWG] Response:', data.count || data.results?.length || 0, 'games found, requested:', uncachedIds.length);
+
+    if (data.results && data.results.length > 0) {
+      console.log('[RAWG] Sample game:', JSON.stringify(data.results[0]).substring(0, 200));
+      data.results.forEach(game => {
+        // 1. 优先尝试直接获取 (部分 RAWG 接口会带这个字段)
+        let appId = game.steam_appid ? String(game.steam_appid) : null;
+
+        // 2. 如果没有直接字段，从 stores 列表中精确匹配 Steam 商店的 AppID
+        if (!appId && game.stores) {
+          const steamStore = game.stores.find(s => s.store && (s.store.id === 1 || s.store.slug === 'steam'));
+          if (steamStore && steamStore.url) {
+            const match = steamStore.url.match(/\/app\/(\d+)/);
+            if (match) appId = match[1];
+          }
+        }
+
+        if (appId) {
+          steamToRawgCache[appId] = game.id;
+          if (game.background_image) {
+            rawgImageCache[appId] = game.background_image;
+          } else if (game.short_screenshots && game.short_screenshots.length > 0) {
+            rawgImageCache[appId] = game.short_screenshots[0].image;
+          }
+        }
+      });
+      console.log(`[RAWG] Batch update: mapped ${data.results.length} results, total cached: ${Object.keys(rawgImageCache).length}`);
+    } else {
+      console.log('[RAWG] No results - trying fallback search...');
+      // Fallback: 如果 steam_appids 不工作，尝试用名称搜索
+      // 这里可以后续添加基于游戏名称的搜索逻辑
+    }
+  } catch (err) {
+    console.error('[RAWG] Batch fetch error:', err);
   }
 };
 
@@ -207,29 +233,42 @@ export const getRAWGImagesBatch = async (steamAppIds) => {
 export const enrichGamesWithRAWG = async (games) => {
   if (!games || games.length === 0) return games;
 
-  // 1. 提取所有 Steam AppID
-  const steamAppIds = games
-    .map(g => String(g.appid || g.id || g.product_id))
-    .filter(id => id && id !== 'undefined' && id !== 'null');
+  // 1. 先检查哪些游戏已经有 background_image（来自后端数据库）
+  const gamesNeedRawg = [];
+  const existingImages = {};
 
-  if (steamAppIds.length === 0) return games;
+  games.forEach(game => {
+    const appId = String(game.appid || game.id || game.product_id);
+    if (game.background_image && game.background_image.startsWith('http')) {
+      // 后端已返回 RAWG 图片，直接使用
+      existingImages[appId] = game.background_image;
+    } else {
+      gamesNeedRawg.push(appId);
+    }
+  });
 
-  // 2. 批量获取图片 (利用缓存 + 单次 API 请求)
-  const imageMap = await getRAWGImagesBatch(steamAppIds);
+  // 如果所有游戏都有图片，直接返回
+  if (gamesNeedRawg.length === 0) {
+    return games.map(game => ({ ...game, _enriched: true }));
+  }
 
-  // 3. 应用数据并补充其他元数据 (异步，但不阻塞核心显示)
+  // 2. 对于没有图片的游戏，批量获取
+  const imageMap = await getRAWGImagesBatch(gamesNeedRawg);
+
+  // 3. 合并已有的图片和从 RAWG 获取的图片
+  const allImages = { ...existingImages, ...imageMap };
+
+  // 4. 应用数据
   return games.map(game => {
     const appId = String(game.appid || game.id || game.product_id);
-    const backgroundImage = imageMap[appId];
+    const backgroundImage = allImages[appId];
 
-    // 如果命中了缓存或批量接口，直接返回增强后的对象
+    // 如果有图片，返回增强后的对象
     if (backgroundImage) {
       return {
         ...game,
         background_image: backgroundImage,
-        // 如果有 steamToRawgCache，补全 rawg_id
         rawg_id: steamToRawgCache[appId] || game.rawg_id,
-        // 标记为已增强
         _enriched: true
       };
     }

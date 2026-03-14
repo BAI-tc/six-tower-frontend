@@ -13,6 +13,7 @@ import { FestivalHeroSection } from '@/components/festival/hero-section';
 // 六塔模型权重配置
 import { WEIGHT_PRESETS, fetchWeightedRecommendationsWithWeights, deduplicateGames, MODULE_CONFIG } from '@/api/six-tower';
 import { SmartImage } from '@/components/common/smart-image';
+import { AnimatedSection } from '@/components/common/lazy-section';
  
  // 核心类型翻译映射
  const genreTranslationMap = {
@@ -225,7 +226,7 @@ function FeaturedCard({ game, reason }) {
   const appId = game.steam_appid || game.product_id || game.id;
   const name = game.title || game.name;
   const coverUrl = game.background_image || game.cover_url;
-  const displayCoverUrl = coverUrl || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+  const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
   const rating = game.metacritic || game.rating;
 
   return (
@@ -446,7 +447,7 @@ function SceneGridCard({ game, isLarge = false, sceneType = 'standard' }) {
   const appId = game.steam_appid || game.product_id || game.id || game.appid;
   const name = game.title || game.name || game.app_name;
   const coverUrl = game.background_image || game.cover_url;
-  const displayCoverUrl = coverUrl || `https://placehold.co/800x450/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+  const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/800x450/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
   const matchScore = game.match_reason || game.similarity_score;
   const rawGenres = game.genres?.slice(0, 2).map(g => g.name || g) || [game.preferred_genre || 'Universal'];
   const genres = rawGenres.map(g => genreTranslationMap[g] || g).join(' / ');
@@ -753,7 +754,7 @@ function PersonalizedSteamSection({ games, title, reason, type = 'standard' }) {
           const appId = game.steam_appid || game.product_id || game.id || game.appid;
           const name = game.title || game.name || game.app_name;
           const coverUrl = game.background_image || game.cover_url;
-          const displayCoverUrl = coverUrl || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+          const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
           const rating = game.metacritic || game.rating;
 
           return (
@@ -934,8 +935,12 @@ export default function HomePage() {
   const [activeSceneIndex, setActiveSceneIndex] = useState(0);
   const [sceneInfo, setSceneInfo] = useState(null);
 
+  // 防止 hydration 不匹配
+  const [mounted, setMounted] = useState(false);
+
   // 加载数据
   useEffect(() => {
+    setMounted(true);
     const steamId = localStorage.getItem('steam_id');
     const username = localStorage.getItem('steam_username');
     const avatar = localStorage.getItem('steam_avatar');
@@ -1097,24 +1102,25 @@ export default function HomePage() {
 
       // 第三阶段：次要模块与场景屏（后台挂起运行，不阻塞主屏）
       (async () => {
-        const p2Start = Date.now();
-        const [
-          popularNotOwnedResult, similarResult, genreResult,
-          guessYouLikeResult, genreHotResult, tribeResult, quantumResult, resurrectionResult, chronosResult, cultResult
-        ] = await Promise.all([
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.popularNotOwned.topk, WEIGHT_PRESETS.popularNotOwned, MODULE_CONFIG.popularNotOwned.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.similar.topk, WEIGHT_PRESETS.similar, MODULE_CONFIG.similar.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.byGenre.topk, WEIGHT_PRESETS.byGenre, MODULE_CONFIG.byGenre.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.guessYouLike.topk, WEIGHT_PRESETS.guessYouLike, MODULE_CONFIG.guessYouLike.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.genreHot.topk, WEIGHT_PRESETS.genreHot, MODULE_CONFIG.genreHot.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.tribe.topk, WEIGHT_PRESETS.tribe, MODULE_CONFIG.tribe.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.quantum.topk, WEIGHT_PRESETS.quantum, MODULE_CONFIG.quantum.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.resurrection.topk, WEIGHT_PRESETS.resurrection, MODULE_CONFIG.resurrection.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.chronos.topk, WEIGHT_PRESETS.chronos, MODULE_CONFIG.chronos.offset),
-          fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.cult.topk, WEIGHT_PRESETS.cult, MODULE_CONFIG.cult.offset)
-        ]);
+        try {
+          const p2Start = Date.now();
+          const [
+            popularNotOwnedResult, similarResult, genreResult,
+            guessYouLikeResult, genreHotResult, tribeResult, quantumResult, resurrectionResult, chronosResult, cultResult
+          ] = await Promise.all([
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.popularNotOwned.topk, WEIGHT_PRESETS.popularNotOwned, MODULE_CONFIG.popularNotOwned.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.similar.topk, WEIGHT_PRESETS.similar, MODULE_CONFIG.similar.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.byGenre.topk, WEIGHT_PRESETS.byGenre, MODULE_CONFIG.byGenre.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.guessYouLike.topk, WEIGHT_PRESETS.guessYouLike, MODULE_CONFIG.guessYouLike.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.genreHot.topk, WEIGHT_PRESETS.genreHot, MODULE_CONFIG.genreHot.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.tribe.topk, WEIGHT_PRESETS.tribe, MODULE_CONFIG.tribe.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.quantum.topk, WEIGHT_PRESETS.quantum, MODULE_CONFIG.quantum.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.resurrection.topk, WEIGHT_PRESETS.resurrection, MODULE_CONFIG.resurrection.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.chronos.topk, WEIGHT_PRESETS.chronos, MODULE_CONFIG.chronos.offset),
+            fetchWeightedRecommendationsWithWeights(steamId, MODULE_CONFIG.cult.topk, WEIGHT_PRESETS.cult, MODULE_CONFIG.cult.offset)
+          ]);
 
-        console.log(`[Home] Phase 2 background fetches done in ${Date.now() - p2Start}ms`);
+          console.log(`[Home] Phase 2 background fetches done in ${Date.now() - p2Start}ms`);
 
         const getModuleGamesWithState = (rawList, limit) => {
           const deduped = deduplicateGames(rawList || [], usedGameIds, limit);
@@ -1182,6 +1188,9 @@ export default function HomePage() {
           sessionStorage.setItem('homepage_shown_ids', JSON.stringify(Array.from(usedGameIds)));
         }
         console.log(`[Home] All background content loaded in ${Date.now() - startTime}ms`);
+        } catch (p2Error) {
+          console.error('[Home] Phase 2 error:', p2Error);
+        }
       })();
 
     } catch (error) {
@@ -1214,7 +1223,7 @@ export default function HomePage() {
 
         <div className="px-4 xl:px-40">
           <div className="container mx-auto">
-            {user ? (
+            {mounted && user ? (
               <>
                 <h1 className="text-4xl md:text-5xl font-bold text-white mb-3">
                   欢迎回来，{user.username}
@@ -1234,7 +1243,7 @@ export default function HomePage() {
               </>
             )}
             <div className="flex gap-4">
-              {user ? (
+              {mounted && user ? (
                 <Link href="/recommendations" className="px-6 py-3 bg-[#ff00ff] text-black font-bold rounded-lg hover:bg-[#4ba3d6] transition-colors">
                   查看推荐
                 </Link>
@@ -1302,62 +1311,74 @@ export default function HomePage() {
           )}
 
           {/* 4. 相似游戏 */}
-          {user && similarGames.length > 0 && (
-            <>
-              <PersonalizedSteamSection
-                games={similarGames.slice(0, 4)}
-                title="和您拥有的游戏相似"
-                reason={`基于 ${recentGames[0]?.name || '您的游戏库'}`}
-                type="large"
-              />
-              {similarGames.length > 4 && (
-                <PersonalizedSteamSection
-                  games={similarGames.slice(4, 12)}
-                  title="更多类似游戏"
-                  reason="基于您游戏历史的个性化推荐"
-                  type="standard"
-                />
+          {mounted && user && (
+            <AnimatedSection>
+              {similarGames.length > 0 && (
+                <>
+                  <PersonalizedSteamSection
+                    games={similarGames.slice(0, 4)}
+                    title="和您拥有的游戏相似"
+                    reason={`基于 ${recentGames[0]?.name || '您的游戏库'}`}
+                    type="large"
+                  />
+                  {similarGames.length > 4 && (
+                    <PersonalizedSteamSection
+                      games={similarGames.slice(4, 12)}
+                      title="更多类似游戏"
+                      reason="基于您游戏历史的个性化推荐"
+                      type="standard"
+                    />
+                  )}
+                </>
               )}
-            </>
+            </AnimatedSection>
           )}
 
 
           {/* ========== 登录用户个性化模块 ========== */}
 
           {/* ========== 个性化场景轮播（登录/未登录都可显示）========== */}
-          <div id="personalized-scenes" className="scroll-mt-24">
-            {scenes.length > 0 && (
-              <SceneCarouselSection
-                scenes={scenes}
-                activeIndex={activeSceneIndex}
-                setActiveIndex={setActiveSceneIndex}
-              />
-            )}
-          </div>
+          <AnimatedSection>
+            <div id="personalized-scenes" className="scroll-mt-24">
+              {scenes.length > 0 && (
+                <SceneCarouselSection
+                  scenes={scenes}
+                  activeIndex={activeSceneIndex}
+                  setActiveIndex={setActiveSceneIndex}
+                />
+              )}
+            </div>
+          </AnimatedSection>
 
           {/* 6. Popular Games You Might Like (替换 For You) */}
-          {user && popularNotOwned.length > 0 && (
-            <div className="mb-14">
-              <SectionHeader
-                title="您可能会喜欢的游戏"
-                subtitle="您尚未拥有的热门游戏"
-                link="/recommendations"
-              />
-              <UbisoftCarousel games={popularNotOwned} />
-            </div>
+          {mounted && user && (
+            <AnimatedSection>
+              {popularNotOwned.length > 0 && (
+                <div className="mb-14">
+                  <SectionHeader
+                    title="您可能会喜欢的游戏"
+                    subtitle="您尚未拥有的热门游戏"
+                    link="/recommendations"
+                  />
+                  <UbisoftCarousel games={popularNotOwned} />
+                </div>
+              )}
+            </AnimatedSection>
           )}
 
 
           {/* 8. Based on Your Genre Preferences (替换 Explore Genres) */}
-          {Object.keys(genreSpotlight).length > 0 && (
-            <GenreCompactShowcase genreSpotlight={genreSpotlight} />
-          )}
+          <AnimatedSection>
+            {Object.keys(genreSpotlight).length > 0 && (
+              <GenreCompactShowcase genreSpotlight={genreSpotlight} />
+            )}
+          </AnimatedSection>
 
           {/* 9. 专业页脚 (补充) */}
           <Footer />
 
           {/* 未登录提示 */}
-          {!user && Object.keys(genreSpotlight).length === 0 && (
+          {mounted && !user && Object.keys(genreSpotlight).length === 0 && (
             <div className="text-center py-16 px-4">
               <div className="inline-block bg-[#1a0a2e] rounded-xl border border-[#2d0a3e] p-8 max-w-md">
                 <h3 className="text-2xl font-bold text-white mb-3">登录获取个性化推荐</h3>

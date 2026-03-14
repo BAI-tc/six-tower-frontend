@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Background from '../_components/background';
@@ -53,6 +53,14 @@ export default function LoginPage() {
   const [steamId, setSteamId] = useState('');
   const [error, setError] = useState('');
   const router = useRouter();
+
+  // 如果已经登录，直接跳转到首页
+  useEffect(() => {
+    const existingId = localStorage.getItem('steam_id');
+    if (existingId) {
+      router.push('/home');
+    }
+  }, [router]);
 
   // 通过Steam ID直接登录（绕过OpenID）
   const handleDirectLogin = async () => {

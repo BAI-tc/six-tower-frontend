@@ -11,12 +11,15 @@ export default function Home() {
 
   useEffect(() => {
     const steamId = localStorage.getItem('steam_id');
+    const username = localStorage.getItem('steam_username');
+    
+    console.log('[Auth] Checking session at root...', { steamId, username });
 
     if (steamId) {
-      // 已登录，跳转到首页
+      console.log('[Auth] Session found, redirecting to /home');
       router.push('/home');
     } else {
-      // 未登录，跳转到登录页
+      console.log('[Auth] No session found, redirecting to /login');
       router.push('/login');
     }
   }, [router]);
