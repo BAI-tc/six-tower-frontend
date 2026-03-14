@@ -4,51 +4,23 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Background from '../_components/background';
 import CustomImage from '../_components/custom-image';
-import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, getChineseName } from '@/config';
+import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, getChineseName, enrichGamesWithRAWG } from '@/config';
 import LoadingScreen from '@/app/_components/loading-screen';
 import { SmartImage } from '@/components/common/smart-image';
 
 const PAGE_SIZE = 20;
 
-// ============ Enrichment Helper ============
+// ============ Helper Functions ============
 
-async function enrichWithRAWG(games) {
-  if (!games || games.length === 0) return games;
-  
-  try {
-    const enrichedGames = await Promise.all(games.map(async (game) => {
-      const appId = game.product_id || game.app_id || game.appid;
-      const title = game.name || game.title;
-      
-      // 尝试在 RAWG 搜索该游戏
-      try {
-        const response = await fetch(
-          `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&search=${encodeURIComponent(title)}&page_size=1`,
-          { cache: 'no-store' }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          if (data.results && data.results.length > 0) {
-            const rawgGame = data.results[0];
-            return {
-              ...game,
-              rawg_id: rawgGame.id,
-              background_image: rawgGame.background_image || game.background_image,
-              rating: rawgGame.rating || game.rating,
-              metacritic: rawgGame.metacritic || game.metacritic,
-              genres: rawgGame.genres || game.genres || [],
-              parent_platforms: rawgGame.parent_platforms || [],
-            };
-          }
-        }
-      } catch (e) { console.error(`Failed to enrich game ${title}:`, e); }
-      return game;
-    }));
-    return enrichedGames;
-  } catch (err) {
-    console.error('Enrichment process failed:', err);
-    return games;
-  }
+// 简单的去重工具
+function deduplicate(allGames, currentSection) {
+  const seen = new Set(allGames.map(g => String(g.appid || g.id || g.product_id)));
+  return currentSection.filter(g => {
+    const id = String(g.appid || g.id || g.product_id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 // ============ API Functions ============
@@ -299,27 +271,48 @@ export default function RecommendationsPage() {
 
   const loadAllData = async (steamId) => {
     setIsLoading(true);
-    const [library, recent, popular, similar, genre] = await Promise.all([
-      fetchUserLibrary(steamId),
-      fetchRecentlyPlayed(steamId),
-      fetchPopularNotOwned(steamId, 0, 15),
-      fetchSimilarToOwned(steamId, 15),
-      fetchByGenre(steamId, 15)
-    ]);
+    try {
+      const [library, recent, popular, similar, genre] = await Promise.all([
+        fetchUserLibrary(steamId),
+        fetchRecentlyPlayed(steamId),
+        fetchPopularNotOwned(steamId, 0, 15),
+        fetchSimilarToOwned(steamId, 15),
+        fetchByGenre(steamId, 15)
+      ]);
 
-    // 并行执行 RAWG 数据补全
-    const [enrichedPopular, enrichedSimilar, enrichedGenre, enrichedRecent] = await Promise.all([
-      enrichWithRAWG(popular.games || []),
-      enrichWithRAWG(similar || []),
-      enrichWithRAWG(genre || []),
-      enrichWithRAWG(recent || [])
-    ]);
+      const popularGames = popular.games || [];
+      const similarOwned = similar || [];
+      const genreBased = genre || [];
+      const recentPlayed = recent || [];
 
-    setUserLibrary(library || []);
-    setRecentlyPlayed(enrichedRecent);
-    setPopularNotOwned(enrichedPopular);
-    setSimilarGames(enrichedSimilar);
-    setGenreGames(enrichedGenre);
+      // 1. 深度去重：确保同一个游戏只出现在一个推荐位
+      // 策略：相似推荐优先 -> 分类推荐 -> 热门推荐
+      const finalSimilar = [...similarOwned];
+      const finalGenre = deduplicate(finalSimilar, genreBased);
+      const finalPopular = deduplicate([...finalSimilar, ...finalGenre], popularGames);
+
+      // 2. 批量增强 (高清图片和中文名称)
+      // 将所有需要显示的合在一起增强，效率最高
+      const allToEnrich = [...finalSimilar, ...finalGenre, ...finalPopular, ...recentPlayed];
+      const enrichedAll = await enrichGamesWithRAWG(allToEnrich);
+
+      // 3. 将增强后的数据映射回原来的部分
+      const enrichedMap = {};
+      enrichedAll.forEach(g => {
+        const id = String(g.appid || g.id || g.product_id);
+        enrichedMap[id] = g;
+      });
+
+      const mapBack = (list) => list.map(g => enrichedMap[String(g.appid || g.id || g.product_id)] || g);
+
+      setUserLibrary(library || []);
+      setSimilarGames(mapBack(finalSimilar));
+      setGenreGames(mapBack(finalGenre));
+      setPopularNotOwned(mapBack(finalPopular));
+      setRecentlyPlayed(mapBack(recentPlayed));
+    } catch (err) {
+      console.error('Failed to load recommendation data:', err);
+    }
     setIsLoading(false);
   };
 

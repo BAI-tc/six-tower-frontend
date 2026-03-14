@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { RAWG_API_URL, RAWG_API_KEY, getChineseName } from '@/config';
+import { RAWG_API_URL, RAWG_API_KEY, getChineseName, enrichGamesWithRAWG } from '@/config';
 import { useSearchHistory } from '@/hooks/useSearchHistory';
 import { WishlistButton } from '@/hooks/useWishlist';
 import LoadingScreen from '@/app/_components/loading-screen';
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 60;
 
 // 核心类型翻译映射
 const genreTranslationMap = {
@@ -408,27 +408,54 @@ export default function DiscoverPage() {
 
   const loadGames = async () => {
     setIsLoading(true);
-    const params = {
-      page: filters.page,
-      page_size: 100,
-      ordering: filters.ordering,
+    
+    // 因为 RAWG API 单次请求最多返回 40 条数据，为了实现 60 条（6*10）的展示，
+    // 我们将 UI 的每一页对应到 RAWG 的两个连续页（每页 30 条）
+    const fetchPagePart = async (pageNum) => {
+      const params = {
+        page: pageNum,
+        page_size: 30,
+        ordering: filters.ordering,
+        genres: filters.genres,
+        platforms: filters.platforms,
+        dates: filters.dates,
+        search: filters.search,
+      };
+      return await fetchGames(params);
     };
 
-    if (filters.genres) params.genres = filters.genres;
-    if (filters.platforms) params.platforms = filters.platforms;
-    if (filters.dates) params.dates = filters.dates;
-    if (filters.search) params.search = filters.search;
+    try {
+      // 并行请求两个部分
+      const [data1, data2] = await Promise.all([
+        fetchPagePart(filters.page * 2 - 1),
+        fetchPagePart(filters.page * 2)
+      ]);
 
-    const data = await fetchGames(params);
-    if (data.error === 'RAWG_API_LIMIT') {
-      window.alert('RAWG API 次数已达上限或 Key 无效，部分内容可能无法显示。请检查配置或稍后再试。');
-      setIsLoading(false);
-      return;
+      if (data1.error === 'RAWG_API_LIMIT' || data2.error === 'RAWG_API_LIMIT') {
+        window.alert('RAWG API 次数已达上限或 Key 无效，部分内容可能无法显示。');
+        setIsLoading(false);
+        return;
+      }
+
+      const combinedGames = [...(data1.games || []), ...(data2.games || [])];
+      
+      // 添加：使用全局增强工具补全中文名称和高清图片
+      const enrichedGames = await enrichGamesWithRAWG(combinedGames);
+      
+      // 过滤只保留 CSV 中存在的 app id (如果已加载)
+      const filteredGames = validAppIds.size > 0 ? filterByValidAppIds(enrichedGames) : enrichedGames;
+      
+      setGames(filteredGames);
+      setPagination({
+        ...data2.pagination,
+        page: filters.page,
+        page_size: 60,
+        has_more: data2.pagination.has_more
+      });
+    } catch (error) {
+      console.error('Error in loadGames:', error);
     }
-    // 过滤只保留 CSV 中存在的 app id (如果已加载)
-    const filteredGames = validAppIds.size > 0 ? filterByValidAppIds(data.games || []) : (data.games || []);
-    const finalGames = filteredGames.slice(0, filters.page_size || 60);
-    setGames(finalGames);
+
     setIsLoading(false);
     if (initialLoad) {
       setInitialLoad(false);
@@ -535,7 +562,7 @@ export default function DiscoverPage() {
               {filters.dates && <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ff00ff]/20 text-[#ff00ff] text-xs rounded">{DATE_OPTIONS.find(o => o.value === filters.dates)?.label}<button onClick={() => handleFilterChange('dates', '')}>✕</button></span>}
               {filters.platforms && <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ff00ff]/20 text-[#ff00ff] text-xs rounded">{PLATFORM_OPTIONS.find(o => o.value === filters.platforms)?.label}<button onClick={() => handleFilterChange('platforms', '')}>✕</button></span>}
               {filters.genres && <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ff00ff]/20 text-[#ff00ff] text-xs rounded">{genres.find(g => g.slug === filters.genres)?.name}<button onClick={() => handleFilterChange('genres', '')}>✕</button></span>}
-              <button onClick={() => setFilters({ page: 1, page_size: 30, ordering: '-added', genres: '', platforms: '', dates: '', search: '' })} className="text-xs text-slate-500 hover:text-[#ff00ff]">清除全部</button>
+              <button onClick={() => setFilters({ page: 1, page_size: 60, ordering: '-added', genres: '', platforms: '', dates: '', search: '' })} className="text-xs text-slate-500 hover:text-[#ff00ff]">清除全部</button>
             </div>
           )}
         </div>
@@ -569,7 +596,7 @@ export default function DiscoverPage() {
         ) : (
           <>
             {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-4 mb-8">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
                 {games.map(game => (
                   <GameCard key={game.id} game={game} />
                 ))}

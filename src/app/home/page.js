@@ -290,8 +290,8 @@ function EpicCarousel({ games }) {
             if (result.code === 200 && result.data) {
               const g = result.data;
               details[appId] = {
-                name: g.app_name || g.title,
-                description: (g.short_description || g.description || "").replace(/<[^>]*>?/gm, '').substring(0, 180) + '...',
+                name: g.app_name || g.name || g.title,
+                description: g.description || (g.short_description || g.description || "").replace(/<[^>]*>?/gm, '').substring(0, 180) + '...',
               };
             }
           }
@@ -1085,7 +1085,8 @@ export default function HomePage() {
       const recentGames = deduplicateGames(recentResult.recommendations || [], usedGameIds, 5);
 
       // 2. 核心模块图片获取并立即显示
-      const coreGames = [...topRatedGames, ...newReleasesGames, ...trendingGames];
+      // 包含最近玩过的游戏，确保画质一致
+      const coreGames = [...topRatedGames, ...newReleasesGames, ...trendingGames, ...recentGames];
       const enrichedCore = await enrichGamesWithRAWG(coreGames);
       const coreMap = new Map(enrichedCore.map(g => [String(g.appid || g.id || g.product_id), g]));
       const applyCore = games => games.map(g => coreMap.get(String(g.appid || g.id || g.product_id)) || g);
@@ -1093,10 +1094,10 @@ export default function HomePage() {
       setTopRatedGames(applyCore(topRatedGames));
       setNewReleases(applyCore(newReleasesGames));
       setTrendingGames(applyCore(trendingGames));
-      setRecentGames(recentGames);
+      setRecentGames(applyCore(recentGames));
       setSceneInfo(sceneInfoData);
       
-      // 关键响应点：首屏核心内容就绪，立即关闭加载动画
+      // 延迟加载次屏数据，确保首页基本块加载完毕再关闭 Loading
       setIsLoading(false);
       console.log(`[Home] Initial UI revealed in ${Date.now() - startTime}ms. Continuing background fetch...`);
 

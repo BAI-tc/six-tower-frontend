@@ -91,21 +91,21 @@ export const getChineseName = (originalName) => {
 // RAWG API (游戏数据) - 通过后端代理以解决生产环境 401 和跨域问题
 export const RAWG_API_URL = `${ULTIM_API_BASE}/rawg`;
 export const RAWG_API_KEY = '6ca8bd255e02417fb90ce0b97c72a035';
-export const RAWG_IMAGE_API = 'https://media.itch.zone/image';
+export const RAWG_IMAGE_API = 'https://media.rawg.io/media';
 
 // IGDB 图片 API
-export const IMAGE_API = 'https://images.igdb.com';
+export const IMAGE_API = 'https://images.igdb.com/igdb/image/upload';
 export const IMAGE_SIZES = {
-  'c-small': 'cover_small',
-  'c-big': 'cover_big',
-  'c-medium': 'cover_medium',
-  'c-large': 'cover_large',
-  'screenshot-huge': 'screenshot_huge',
-  'screenshot-big': 'screenshot_big',
-  'screenshot-medium': 'screenshot_med',
-  '720p': '720p',
-  '1080p': '1080p',
-  'logo-med': 'logo_med',
+  'c-sm': 't_cover_small',
+  'c-big': 't_cover_big',
+  's-md': 't_screenshot_med',
+  's-big': 't_screenshot_big',
+  's-huge': 't_screenshot_huge',
+  logo: 't_logo_med',
+  thumb: 't_thumb',
+  micro: 't_micro',
+  hd: 't_720p',
+  'full-hd': 't_1080p',
 };
 
 // Steam CDN 基础 URL (使用 akamaihd CDN)
@@ -128,16 +128,35 @@ export const getSteamHeroUrl = (appId) => {
 
 // 从 RAWG API 获取游戏的 16:9 高清图片
 // RAWG 提供的图片通常是 1280x720 (720p) 或更高分辨率
-let rawgImageCache = {};      // steamAppId -> background_image
-let steamToRawgCache = {};    // steamAppId -> rawgId
+let rawgImageCache = {}; // 内存缓存
+
+// 初始化：从 sessionStorage 加载缓存
+if (typeof window !== 'undefined') {
+  try {
+    const saved = sessionStorage.getItem('rawg_image_cache');
+    if (saved) rawgImageCache = JSON.parse(saved);
+  } catch (e) {
+    console.warn('[RAWG] Failed to load cache from sessionStorage', e);
+  }
+}
+
+const saveToSession = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.setItem('rawg_image_cache', JSON.stringify(rawgImageCache));
+    } catch (e) {
+      // 容错：缓存过大可能报错
+    }
+  }
+};
 
 // 使用 RAW G 批量搜索一次获取所有游戏的图片
 export const fetchRAWGGamesBatch = async (steamAppIds) => {
   // 去重
   const uniqueIds = [...new Set(steamAppIds.map(id => String(id)))];
 
-  // 过滤掉已有缓存图片的
-  const uncachedIds = uniqueIds.filter(id => !rawgImageCache[id]);
+  // 过滤掉已有缓存图片的，并且排除掉无效的 ID (如 "undefined" 或空值)
+  const uncachedIds = uniqueIds.filter(id => id && id !== 'undefined' && id !== 'null' && !rawgImageCache[id]);
   
   // 创建一个暂存区，用于通过名字预测匹配
   // 注意：这只是在 steam_appid 缺失时的最后兜底
@@ -148,28 +167,23 @@ export const fetchRAWGGamesBatch = async (steamAppIds) => {
   });
 
   if (uncachedIds.length === 0) {
-    console.log('[RAWG] All images already cached');
     return;
   }
 
   try {
     // 使用逗号分隔的 steam_appids 批量查询
     const idsParam = uncachedIds.join(',');
-    const rawngUrl = `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&steam_appids=${idsParam}&page_size=${uncachedIds.length}&fields=id,background_image,short_screenshots,name,steam_appid`;
-    console.log('[RAWG] Fetching:', rawngUrl.substring(0, 150) + '...');
-
+    const rawngUrl = `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&steam_appids=${idsParam}&page_size=${uncachedIds.length}`;
+    
     const response = await fetch(rawngUrl, { cache: 'no-store' });
 
     if (!response.ok) {
-      console.log('[RAWG] API error:', response.status, response.statusText);
       return;
     }
 
     const data = await response.json();
-    console.log('[RAWG] Response:', data.count || data.results?.length || 0, 'games found, requested:', uncachedIds.length);
 
     if (data.results && data.results.length > 0) {
-      console.log('[RAWG] Sample game:', JSON.stringify(data.results[0]).substring(0, 200));
       data.results.forEach(game => {
         // 1. 优先尝试直接获取 (部分 RAWG 接口会带这个字段)
         let appId = game.steam_appid ? String(game.steam_appid) : null;
@@ -184,7 +198,6 @@ export const fetchRAWGGamesBatch = async (steamAppIds) => {
         }
 
         if (appId) {
-          steamToRawgCache[appId] = game.id;
           if (game.background_image) {
             rawgImageCache[appId] = game.background_image;
           } else if (game.short_screenshots && game.short_screenshots.length > 0) {
@@ -192,11 +205,7 @@ export const fetchRAWGGamesBatch = async (steamAppIds) => {
           }
         }
       });
-      console.log(`[RAWG] Batch update: mapped ${data.results.length} results, total cached: ${Object.keys(rawgImageCache).length}`);
-    } else {
-      console.log('[RAWG] No results - trying fallback search...');
-      // Fallback: 如果 steam_appids 不工作，尝试用名称搜索
-      // 这里可以后续添加基于游戏名称的搜索逻辑
+      saveToSession();
     }
   } catch (err) {
     console.error('[RAWG] Batch fetch error:', err);
@@ -206,19 +215,12 @@ export const fetchRAWGGamesBatch = async (steamAppIds) => {
 // 批量获取 RAWG 图片 (检查缓存，必要时批量获取)
 export const getRAWGImagesBatch = async (steamAppIds) => {
   const uniqueIds = [...new Set(steamAppIds.map(id => String(id)))];
+  const neededIds = uniqueIds.filter(id => !rawgImageCache[id]);
 
-  // 统计需要获取的数量
-  const cachedCount = uniqueIds.filter(id => rawgImageCache[id]).length;
-  const neededCount = uniqueIds.length - cachedCount;
-
-  console.log('[RAWG] Cached:', cachedCount, '/', uniqueIds.length);
-
-  // 如果有未缓存的，批量获取
-  if (neededCount > 0) {
-    await fetchRAWGGamesBatch(uniqueIds);
+  if (neededIds.length > 0) {
+    await fetchRAWGGamesBatch(neededIds);
   }
 
-  // 返回结果
   const results = {};
   uniqueIds.forEach(id => {
     if (rawgImageCache[id]) {
@@ -233,12 +235,19 @@ export const getRAWGImagesBatch = async (steamAppIds) => {
 export const enrichGamesWithRAWG = async (games) => {
   if (!games || games.length === 0) return games;
 
-  // 1. 先检查哪些游戏已经有 background_image（来自后端数据库）
+  const getSteamImage = (appId) => `https://steamcdn-a.akamaihd.net/steam/apps/${appId}/header.jpg`;
+
+  // 1. 判断哪些游戏需要从 RAWG 补全大图
   const gamesNeedRawg = [];
   const existingImages = {};
 
   games.forEach(game => {
-    const appId = String(game.appid || game.id || game.product_id);
+    // 适配多种潜在的 ID 字段名，特别是推荐接口返回的 gameid
+    const appId = String(game.gameid || game.appid || game.id || game.product_id);
+    
+    // 跳过无效 ID
+    if (!appId || appId === 'undefined' || appId === 'null') return;
+
     if (game.background_image && game.background_image.startsWith('http')) {
       // 后端已返回 RAWG 图片，直接使用
       existingImages[appId] = game.background_image;
@@ -262,21 +271,34 @@ export const enrichGamesWithRAWG = async (games) => {
   return games.map(game => {
     const appId = String(game.appid || game.id || game.product_id);
     const backgroundImage = allImages[appId];
+    
+    // 基础重构：即使没有新图片，也要尝试中文翻译
+    let enrichedGame = { ...game };
 
-    // 如果有图片，返回增强后的对象
-    if (backgroundImage) {
-      return {
-        ...game,
-        background_image: backgroundImage,
-        rawg_id: steamToRawgCache[appId] || game.rawg_id,
-        _enriched: true
-      };
+    // 中文名称翻译（优先映射表，其次检查现有名称是否含中文）
+    if (!hasChinese(enrichedGame.name || enrichedGame.title || enrichedGame.app_name)) {
+      enrichedGame.name = getChineseName(enrichedGame.name || enrichedGame.title || enrichedGame.app_name);
+      enrichedGame.title = enrichedGame.name;
     }
 
-    // 后备方案：保持现状
-    return game;
+    // 图片处理
+    if (backgroundImage) {
+      enrichedGame.background_image = backgroundImage;
+    } else if (!enrichedGame.background_image) {
+      enrichedGame.background_image = getSteamImage(appId);
+    }
+
+    // 状态标记
+    enrichedGame._enriched = true;
+    return enrichedGame;
   });
 };
+
+// 辅助函数：判断字符串是否包含中文
+function hasChinese(str) {
+  if (!str) return false;
+  return /[\u4e00-\u9fa5]/.test(str);
+}
 
 // 清除缓存 (用于调试)
 export const clearRAWGCache = () => {

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { GameGallery } from "@/components/festival/game-gallery"
-import { RAWG_API_URL, RAWG_API_KEY, getChineseName } from '@/config'
 import {
   AutoScrollGallery,
   GameReleaseCard,
@@ -12,6 +11,7 @@ import {
   BannerGameCard,
   VideoCard
 } from "@/components/festival/cards"
+import { enrichGamesWithRAWG, getChineseName } from "@/config"
 
 // 主题名称翻译映射
 const themeNameMap = {
@@ -130,42 +130,8 @@ function extractAllRecommendedGames(recommendations) {
   return games
 }
 
-// RAWG 数据补全辅助函数
-async function enrichWithRAWG(games) {
-  if (!games || games.length === 0) return games;
-  
-  try {
-    const enrichedGames = await Promise.all(games.slice(0, 30).map(async (game) => {
-      const title = game.title || game.name;
-      if (!title) return game;
-      
-      try {
-        const response = await fetch(
-          `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&search=${encodeURIComponent(title)}&page_size=1`,
-          { cache: 'no-store' }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          if (data.results && data.results.length > 0) {
-            const rawgGame = data.results[0];
-            return {
-              ...game,
-              background_image: rawgGame.background_image || game.background_image,
-              rawg_id: rawgGame.id
-            };
-          }
-        }
-      } catch (e) { console.error(`Failed to enrich game ${title}:`, e); }
-      return game;
-    }));
-    
-    // 如果超过30个，合并剩余的
-    return games.length > 30 ? [...enrichedGames, ...games.slice(30)] : enrichedGames;
-  } catch (err) {
-    console.error('Enrichment process failed:', err);
-    return games;
-  }
-}
+// RAWG 数据补全已由全局 enrichGamesWithRAWG 接管，不再使用本地按名称搜索的低效方案
+
 
 export default function FestivalPage() {
   const [recommendationData, setRecommendationData] = useState(null)
@@ -182,8 +148,8 @@ export default function FestivalPage() {
           const games = extractAllRecommendedGames(data.data.recommendations)
           setAllRecommendedGames(games)
 
-          // 异步增强数据
-          const enriched = await enrichWithRAWG(games)
+          // 异步增强数据 - 使用全局优化的批量 AppID 搜索方案
+          const enriched = await enrichGamesWithRAWG(games)
           setAllRecommendedGames(enriched)
         })
         .catch(err => {
@@ -316,7 +282,7 @@ export default function FestivalPage() {
                     {recommendationData.top_preferences.slice(0, 4).map((pref, i) => {
                       const name = simplifyThemeName(pref.split('(')[0])
                       return (
-                        <span key={i} className="text-[10px] font-bold px-2 py-0.5 bg-neutral-800/10 text-neutral-800 rounded border border-neutral-800/20">
+                        <span key={i} className="text-sm font-bold px-2 py-0.5 bg-neutral-800/10 text-neutral-800 rounded border border-neutral-800/20">
                           {name}
                         </span>
                       )
@@ -367,7 +333,7 @@ export default function FestivalPage() {
                       gameid={card3Game.gameid}
                       image={card3Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card3Game.gameid}/header.jpg`}
                       title={getChineseName(card3Game.title)}
-                      description={dynamicCopy.primary.sub}
+                      description={card3Game.description || dynamicCopy.primary.sub}
                     />
                   )}
                 </div>
@@ -376,7 +342,7 @@ export default function FestivalPage() {
                     gameid={card4Game.gameid}
                     image={card4Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card4Game.gameid}/header.jpg`}
                     title={getChineseName(card4Game.title)}
-                    description="发现属于你的高光时刻"
+                    description={card4Game.description || "发现属于你的高光时刻"}
                     featured={true}
                   />
                 )}

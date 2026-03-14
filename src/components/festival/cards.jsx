@@ -29,7 +29,7 @@ export function TiltedGalleryCard({ gameid, image, alt, title, category, classNa
       {/* 信息标签 */}
       <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-2 group-hover:translate-y-0 transition-transform">
         {category && (
-          <span className="text-[10px] text-[#fbbf24] font-bold uppercase tracking-wider">
+          <span className="text-sm text-[#fbbf24] font-bold uppercase tracking-wider">
             {category}
           </span>
         )}

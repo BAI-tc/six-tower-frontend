@@ -287,7 +287,7 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
               </h2>
               {recommendationData ? (
                 <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
-                  <div className="text-muted-foreground text-sm font-medium">
+                  <div className="text-muted-foreground text-lg font-medium">
                     {emotionalQuotes[Math.floor(Math.random() * emotionalQuotes.length)]}
                   </div>
                 </div>
@@ -373,7 +373,7 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
 
                   {/* 游戏信息 (Epic 风格) */}
                   <div className="bg-card p-5">
-                    <p className="text-xs text-muted-foreground uppercase tracking-[0.2em] mb-2 font-bold group-hover:text-[var(--game-gold)] transition-colors">
+                    <p className="text-base text-muted-foreground uppercase tracking-[0.2em] mb-2 font-bold group-hover:text-[var(--game-gold)] transition-colors">
                       {game.category}
                     </p>
                     <h3 className="font-bold text-xl text-card-foreground group-hover:text-primary transition-colors line-clamp-1">
