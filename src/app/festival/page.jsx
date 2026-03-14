@@ -241,11 +241,22 @@ export default function FestivalPage() {
   ].filter(Boolean);
 
   // 4. 自动滚动画廊数据 - 从第 15 个开始，避开上方核心位
-  const scrollGames = displayPool.length > 20 
-    ? displayPool.slice(15, 35) 
-    : displayPool; 
+  // 添加去重逻辑：先过滤掉首页已显示和画廊已用的游戏
+  const scrollPool = displayPool.length > 20
+    ? displayPool.slice(15).filter(g => !galleryGames.some(gg => String(gg.gameid) === String(g.gameid)))
+    : displayPool.filter(g => !galleryGames.some(gg => String(gg.gameid) === String(g.gameid)));
 
-  const galleryGamesForScroll = scrollGames.map(game => {
+  // 对滚动池进行去重
+  const usedScrollIds = new Set();
+  const uniqueScrollGames = [];
+  scrollPool.forEach(game => {
+    if (!usedScrollIds.has(String(game.gameid))) {
+      usedScrollIds.add(String(game.gameid));
+      uniqueScrollGames.push(game);
+    }
+  });
+
+  const galleryGamesForScroll = uniqueScrollGames.map(game => {
     const theme = recommendationData?.recommendations
       ? Object.entries(recommendationData.recommendations).find(([_, themeGames]) =>
           themeGames.some(g => String(g.gameid) === String(game.gameid))

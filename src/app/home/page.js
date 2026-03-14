@@ -972,8 +972,9 @@ export default function HomePage() {
     ]);
 
     // 类型专题 - 使用非六塔 API（添加去重防止跨类型重复）
+    // 每个类型获取15个游戏，确保去重后仍有4个
     const genres = ['动作', '角色扮演', '策略', '冒险', '模拟'];
-    const genrePromises = genres.map(g => fetchPopularGames(8, g));
+    const genrePromises = genres.map(g => fetchPopularGames(15, g));
     const genreResults = await Promise.all(genrePromises);
     const genreObj = {};
     const usedGenreGameIds = new Set(); // 跨类型去重

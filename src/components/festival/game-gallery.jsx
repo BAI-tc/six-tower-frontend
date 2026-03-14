@@ -168,7 +168,22 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
   }) || []
 
   // 准备游戏数据：如果有推荐数据则使用，否则使用默认数据
-  const displayGames = games.length > 0 ? games.map((game, index) => {
+  // 添加去重逻辑确保不显示重复游戏
+  const processedGames = (() => {
+    if (games.length === 0) return [];
+    const seenIds = new Set();
+    const unique = [];
+    games.forEach(game => {
+      const gameId = game.gameid || game.id || game.appid || game.product_id;
+      if (gameId && !seenIds.has(String(gameId))) {
+        seenIds.add(String(gameId));
+        unique.push(game);
+      }
+    });
+    return unique;
+  })();
+
+  const displayGames = processedGames.length > 0 ? processedGames.map((game, index) => {
     // 如果是从推荐数据传入的
     if (game.gameid) {
       const theme = recommendationData?.recommendations
