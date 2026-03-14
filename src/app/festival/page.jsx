@@ -73,15 +73,15 @@ const personalizedCopyMap = {
 // 获取动态个性化文案
 // 兜底高品质游戏池 (当推荐数量不足时使用) - RAWG 图片优先，Steam 后备
 const FALLBACK_GAMES = [
-  { gameid: "1245620", title: "ELDEN RING", background_image: "https://media.rawg.io/media/games/5ec/5ec7830d44d0f307f0528ad4976d4ade.jpg" },
-  { gameid: "413150", title: "Stardew Valley", background_image: "https://media.rawg.io/media/games/713/71315d748e06f18f5d1e227ea77399a9.jpg" },
-  { gameid: "1145360", title: "Hades", background_image: "https://media.rawg.io/media/games/1f6/1f61ca15030f37453f309714a9bb18ad.jpg" },
-  { gameid: "374320", title: "Dark Souls III", background_image: "https://media.rawg.io/media/games/da1/da1b2c177611ef2596f2774d0ad6a8bc.jpg" },
+  { gameid: "1245620", title: "ELDEN RING", background_image: "https://media.rawg.io/media/resize/1280/-/games/b29/b294fdd866dcdb643e7bab370a552855.jpg" },
+  { gameid: "413150", title: "Stardew Valley", background_image: "https://media.rawg.io/media/resize/1280/-/games/713/713269608dc8f2f40f5a670a14b2de94.jpg" },
+  { gameid: "1145360", title: "Hades", background_image: "https://media.rawg.io/media/resize/1280/-/games/1f4/1f47a270b8f241e4676b14d39ec620f7.jpg" },
+  { gameid: "374320", title: "Dark Souls III", background_image: "https://media.rawg.io/media/resize/1280/-/games/da1/da1b267764d77221f07a4386b6548e5a.jpg" },
   { gameid: "105600", title: "Terraria", background_image: "https://media.rawg.io/media/games/f46/f466571d536f2e3ea9e815ad17177501.jpg" },
-  { gameid: "730", title: "Counter-Strike: Global Offensive", background_image: "https://media.rawg.io/media/games/736/73619d359a864d9957a15f013fe3a033.jpg" },
-  { gameid: "271590", title: "Grand Theft Auto V", background_image: "https://media.rawg.io/media/games/20a/20a4317b0507755c40d1227c443ae355.jpg" },
-  { gameid: "1174180", title: "Red Dead Redemption 2", background_image: "https://media.rawg.io/media/games/511/5118cc3c13e961dcffc263d91964f691.jpg" },
-  { gameid: "292030", title: "The Witcher 3: Wild Hunt", background_image: "https://media.rawg.io/media/games/618/618c49a6470606460e0afda801802970.jpg" }
+  { gameid: "730", title: "Counter-Strike: Global Offensive", background_image: "https://media.rawg.io/media/games/736/73619bd336c894d6941d926bfd563946.jpg" },
+  { gameid: "271590", title: "Grand Theft Auto V", background_image: "https://media.rawg.io/media/games/20a/20aa03a10cda45239fe22d035c0ebe64.jpg" },
+  { gameid: "1174180", title: "Red Dead Redemption 2", background_image: "https://media.rawg.io/media/games/511/5118aff5091cb3efec399c808f8c598f.jpg" },
+  { gameid: "292030", title: "The Witcher 3: Wild Hunt", background_image: "https://media.rawg.io/media/games/618/618c2031a07bbff6b4f611f10b6bcdbc.jpg" }
 ];
 
 const getDynamicCopy = (topPreferences) => {
@@ -378,6 +378,7 @@ export default function FestivalPage() {
                     title="开发者交流会"
                     description="与全球顶尖工作室制作人面对面交流。"
                     buttonText="立即参与"
+                    href="https://gamesci.cn/about"
                   />
                 </div>
                 <div className="space-y-6">

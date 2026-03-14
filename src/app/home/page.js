@@ -1547,6 +1547,18 @@ export default function HomePage() {
             <UbisoftCarousel games={newReleases.slice(0, 20)} />
           </section>
 
+          {/* 3. 游戏节特别入口 (带动态手柄) - 提前到新品热门之后 */}
+          <FestivalHeroSection />
+
+          {/* 4. 专属主站推荐：SixTower - 提前到新品热门之后 */}
+          <section className="mb-16">
+            <SectionHeader
+              title="SixTower 精选"
+              subtitle="顶级精品游戏推荐"
+            />
+            <SixTowerBanner />
+          </section>
+
           {/* 3. Trending Now (Module 3) */}
           {(trendingGames.length > 0) && (
             <div className="mb-14">
@@ -1579,17 +1591,6 @@ export default function HomePage() {
             </>
           )}
 
-          {/* 5. 游戏节特别入口 (带动态手柄) */}
-          <FestivalHeroSection />
-
-          {/* 6. 专属主站推荐：SixTower */}
-          <section className="mb-16">
-            <SectionHeader
-              title="GameScience 核心精选"
-              subtitle="精品游戏推荐"
-            />
-            <SixTowerBanner />
-          </section>
 
           {/* ========== 登录用户个性化模块 ========== */}
 

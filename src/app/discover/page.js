@@ -481,7 +481,7 @@ export default function DiscoverPage() {
                       addToHistory(filters.search.trim());
                     }
                   }}
-                  className="w-full pl-10 pr-4 py-2 bg-[#0e141d] border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-[#ff00ff]"
+                  className="w-full pl-10 pr-4 py-2 bg-[#0e141d] border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-[#ff00ff] text-sm font-medium"
                 />
               </div>
             </div>

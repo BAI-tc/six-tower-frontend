@@ -10,8 +10,7 @@ import { SmartImage } from '@/components/common/smart-image';
 import {
   fetchUserProfile,
   fetchUserPreferences,
-  fetchProfileCompleteness,
-  fetchUserFavorites
+  fetchProfileCompleteness
 } from '@/api/user';
 import { fetchInteractionHistory, deleteInteractionHistory, fetchInteractionStats } from '@/api/interactions';
 import { 
@@ -123,7 +122,6 @@ export default function ProfilePage() {
   const [completeness, setCompleteness] = useState(0);
   const [interactionStats, setInteractionStats] = useState({});
   const [history, setHistory] = useState([]);
-  const [favorites, setFavorites] = useState([]);
 
   const { wishlist, loading: wishlistLoading, refresh: refreshWishlist } = useWishlist(mounted);
 
@@ -154,14 +152,13 @@ export default function ProfilePage() {
   const loadData = async (steamId) => {
     setIsLoading(true);
 
-    const [libraryData, recentData, profile, prefs, complete, iStats, favs, hist] = await Promise.all([
+    const [libraryData, recentData, profile, prefs, complete, iStats, hist] = await Promise.all([
       fetchUserLibrary(steamId),
       fetchRecentlyPlayed(steamId),
       fetchUserProfile(steamId),
       fetchUserPreferences(steamId),
       fetchProfileCompleteness(steamId),
       fetchInteractionStats(steamId),
-      fetchUserFavorites(steamId),
       fetchInteractionHistory(steamId)
     ]);
 
@@ -178,7 +175,6 @@ export default function ProfilePage() {
     setDnaStats(prefs.data?.preferred_genres || []);
     setCompleteness(complete.data?.completion_score || 0);
     setInteractionStats(iStats.data || {});
-    setFavorites(favs.data || []);
     setHistory(hist.data || []);
     
     setIsLoading(false);
@@ -292,7 +288,6 @@ export default function ProfilePage() {
           {[
             { key: 'steam', label: '我的游戏库', Icon: Gamepad2 },
             { key: 'wishlist', label: '愿望清单', Icon: Heart },
-            { key: 'favorites', label: '心动收藏', Icon: Star },
             { key: 'recent', label: '最近足迹', Icon: Clock },
             { key: 'history', label: '探索记录', Icon: History }
           ].map(tab => (
@@ -441,26 +436,6 @@ export default function ProfilePage() {
               </div>
             ) : (
                <p className="text-white/30 text-center py-20 italic">近期暂无冒险记录</p>
-            )}
-          </div>
-        )}
-
-         {activeTab === 'favorites' && (
-           <div className="bg-[#1a1a2e]/60 backdrop-blur-md rounded-xl p-6 border border-white/5">
-             <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3">
-               <Star className="w-6 h-6 text-yellow-400 fill-current" /> 心动收藏
-             </h3>
-            {favorites?.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                {favorites.map(game => (
-                  <GameCard
-                    key={game.product_id}
-                    game={{ ...game, id: game.product_id }}
-                  />
-                ))}
-              </div>
-            ) : (
-               <p className="text-white/30 text-center py-20 italic">尚未收藏任何作品</p>
             )}
           </div>
         )}

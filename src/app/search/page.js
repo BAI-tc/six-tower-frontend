@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { RAWG_API_URL, RAWG_API_KEY } from '@/config';
 import LoadingScreen from '@/app/_components/loading-screen';
+import { WishlistButton } from '@/hooks/useWishlist';
 
 // 类型翻译映射
 const genreTranslationMap = {
@@ -101,6 +102,7 @@ export default function Search() {
                       {game.name}
                     </div>
                   )}
+                  <WishlistButton game={game} />
                   {game.metacritic && (
                     <div className="absolute top-2 right-2 bg-[#ff00ff] text-black text-xs font-bold px-2 py-0.5 rounded">
                       {game.metacritic}

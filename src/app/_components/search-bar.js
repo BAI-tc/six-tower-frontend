@@ -83,7 +83,7 @@ async function fetchRecommendedGames() {
     console.error('Failed to fetch recommended games:', err);
   }
   return [
-    { id: 4200, name: 'Portal 2', background_image: 'https://media.rawg.io/media/games/328/3283617cb7d75d67257fc5833918b871.jpg', reason: '经典解谜', metacritic: 95 },
+    { id: 4200, name: 'Portal 2', background_image: 'https://media.rawg.io/media/resize/1280/-/games/2ba/2bac0e87cf45e5b508f227d281c9252a.jpg', reason: '经典解谜', metacritic: 95 },
     { id: 5286, name: 'Tomb Raider (2013)', background_image: 'https://media.rawg.io/media/games/021/021c4e21a1824d2526f925eff6324653.jpg', reason: '冒险之旅', metacritic: 86 }
   ];
 }
@@ -543,7 +543,7 @@ export default function SearchBar({
               setIsOpen(true);
             }}
             placeholder={isFocused ? '' : placeholder}
-            className={`w-full pl-12 pr-12 py-3 rounded-full border transition-all duration-200 ${
+            className={`w-full pl-12 pr-12 py-3 rounded-full border transition-all duration-200 text-sm font-medium ${
               isLoginPage
                 ? `${isFocused ? 'bg-white border-gray-300' : 'bg-white/10 border-white/20'} text-black placeholder-gray-400 hover:border-gray-300 hover:bg-white focus:bg-white focus:border-gray-400 focus:shadow-lg focus:outline-none`
                 : `${isFocused ? 'bg-white border-white/40' : 'bg-white/10 border-white/10'} text-white placeholder-slate-300 hover:bg-white/20 hover:border-white/30 focus:bg-white/95 focus:border-white/40 focus:outline-none`

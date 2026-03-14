@@ -273,6 +273,7 @@ export function CornerDecorCard({
   title,
   description,
   buttonText = "了解更多",
+  href,
   cornerColor = "bg-red-600",
   className,
 }) {
@@ -293,10 +294,22 @@ export function CornerDecorCard({
         <div className="flex-1 text-center md:text-left">
           <h3 className="text-2xl font-black text-neutral-900 dark:text-white mb-4">{title}</h3>
           <p className="text-neutral-600 dark:text-neutral-400 mb-6 leading-relaxed">{description}</p>
-          <button className="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-full hover:bg-red-700 transition-colors inline-flex items-center gap-2">
-            {buttonText}
-            <ChevronRight className="w-4 h-4" />
-          </button>
+          {href ? (
+            <a 
+              href={href} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-full hover:bg-red-700 transition-colors inline-flex items-center gap-2 w-fit"
+            >
+              {buttonText}
+              <ChevronRight className="w-4 h-4" />
+            </a>
+          ) : (
+            <button className="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-full hover:bg-red-700 transition-colors inline-flex items-center gap-2">
+              {buttonText}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
         </div>
         {image && (
           <div className="flex-shrink-0">

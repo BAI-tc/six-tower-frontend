@@ -47,6 +47,7 @@ const genreTranslationMap = {
 import LoadingScreen from '@/app/_components/loading-screen';
 import { RAWG_API_URL, RAWG_API_KEY, API_BASE } from '@/config';
 import { SmartImage } from '@/components/common/smart-image';
+import { WishlistButton } from '@/hooks/useWishlist';
 
 // 通过 Go 后端代理获取 Steam 游戏详情（避免 CORS 问题）
 async function fetchGameFromBackend(steamAppId) {
@@ -453,6 +454,11 @@ export default function GameDetailPage() {
           <div className="w-full lg:w-[320px] xl:w-[350px] flex-shrink-0 flex flex-col gap-6 items-center lg:items-start">
             <div className="w-[280px] lg:w-full rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.9)] border border-white/10 aspect-[3/4] bg-[#0e141d] relative group">
               <SmartImage src={posterUrl} alt={game.name} gameid={game.steam_app_id || gameId} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" />
+              
+              {/* 愿望单按钮 - 悬浮显示 */}
+              <div className="absolute top-4 right-4 z-30">
+                <WishlistButton game={{ ...game, id: game.steam_app_id || gameId, name: game.name }} />
+              </div>
             </div>
 
             <div className="bg-[#1a0a2e]/60 backdrop-blur-3xl rounded-[2.5rem] p-8 border border-white/5 shadow-2xl flex flex-col gap-4 w-full">
