@@ -61,8 +61,8 @@ const Header = () => {
   const navLinks = [
     { href: '/home', label: '首页' },
     { href: '/festival', label: '游戏节' },
-    { href: '/discover', label: '发现' },
-    { href: '/recommendations', label: '其他推荐' },
+    { href: '/discover', label: '精选发现' },
+    { href: '/recommendations', label: '个人市集' },
   ];
 
   const isActive = (href) => pathname === href || pathname?.startsWith(href + '/');
@@ -71,8 +71,8 @@ const Header = () => {
 
   return (
     <header className={`fixed top-0 left-0 right-0 h-20 z-50 transition-all ${isLoginPage || isHomePage
-        ? 'bg-transparent border-none'
-        : 'bg-[#1a0a2e]/95 backdrop-blur-sm border-b border-[#2d0a3e]'
+      ? 'bg-transparent border-none'
+      : 'bg-[#1a0a2e]/95 backdrop-blur-sm border-b border-[#2d0a3e]'
       }`}>
       <div className='h-full px-4 xl:px-10 flex items-center justify-between relative'>
 
@@ -93,10 +93,10 @@ const Header = () => {
                 key={link.href}
                 href={link.href}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${isActive(link.href)
-                    ? 'bg-[#ff00ff] text-black'
-                    : isLoginPage || isHomePage
-                      ? 'text-white hover:bg-black/20 text-shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#ff00ff] text-black'
+                  : isLoginPage || isHomePage
+                    ? 'text-white hover:bg-black/20 text-shadow-sm'
+                    : 'text-slate-400 hover:text-white'
                   }`}
               >
                 {link.label}
@@ -145,8 +145,8 @@ const Header = () => {
                     <Link
                       href='/profile'
                       className={`block px-3 py-2 text-sm rounded-lg transition-colors ${isLoginPage
-                          ? 'text-black hover:bg-gray-100'
-                          : 'text-slate-400 hover:text-white hover:bg-[#2d0a3e]'
+                        ? 'text-black hover:bg-gray-100'
+                        : 'text-slate-400 hover:text-white hover:bg-[#2d0a3e]'
                         }`}
                     >
                       个人资料
@@ -154,17 +154,17 @@ const Header = () => {
                     <Link
                       href='/recommendations'
                       className={`block px-3 py-2 text-sm rounded-lg transition-colors ${isLoginPage
-                          ? 'text-black hover:bg-gray-100'
-                          : 'text-slate-400 hover:text-white hover:bg-[#2d0a3e]'
+                        ? 'text-black hover:bg-gray-100'
+                        : 'text-slate-400 hover:text-white hover:bg-[#2d0a3e]'
                         }`}
                     >
-                      我的推荐
+                      游戏偏好
                     </Link>
                     <button
                       onClick={handleLogout}
                       className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${isLoginPage
-                          ? 'text-red-500 hover:bg-gray-100'
-                          : 'text-red-400 hover:text-red-300 hover:bg-[#2d0a3e]'
+                        ? 'text-red-500 hover:bg-gray-100'
+                        : 'text-red-400 hover:text-red-300 hover:bg-[#2d0a3e]'
                         }`}
                     >
                       退出登录
@@ -177,8 +177,8 @@ const Header = () => {
             <button
               onClick={handleSteamLogin}
               className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-full transition-all shadow-sm ${isLoginPage || isHomePage
-                  ? 'bg-white/80 hover:bg-white/90 text-black border border-white/30 backdrop-blur-sm'
-                  : 'bg-[#ff00ff] hover:bg-[#d900d9] text-black'
+                ? 'bg-white/80 hover:bg-white/90 text-black border border-white/30 backdrop-blur-sm'
+                : 'bg-[#ff00ff] hover:bg-[#d900d9] text-black'
                 }`}
             >
               <svg viewBox='0 0 24 24' className='w-5 h-5' fill='currentColor'>
@@ -213,8 +213,8 @@ const Header = () => {
                 key={link.href}
                 href={link.href}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isActive(link.href)
-                    ? 'bg-[#ff00ff] text-black'
-                    : 'text-slate-400 hover:text-white hover:bg-[#2d0a3e]'
+                  ? 'bg-[#ff00ff] text-black'
+                  : 'text-slate-400 hover:text-white hover:bg-[#2d0a3e]'
                   }`}
                 onClick={() => setMobileMenuOpen(false)}
               >
