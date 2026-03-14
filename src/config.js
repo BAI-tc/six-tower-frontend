@@ -88,9 +88,9 @@ export const getChineseName = (originalName) => {
   return gameNameMap[originalName] || originalName;
 };
 
-// RAWG API (游戏数据)
-export const RAWG_API_URL = 'https://api.rawg.io/api';
-export const RAWG_API_KEY = '49c56ac48faa4766a9f6a2fc0e24c97f';
+// RAWG API (游戏数据) - 通过后端代理以解决生产环境 401 和跨域问题
+export const RAWG_API_URL = `${ULTIM_API_BASE}/rawg`;
+export const RAWG_API_KEY = '6ca8bd255e02417fb90ce0b97c72a035';
 export const RAWG_IMAGE_API = 'https://media.itch.zone/image';
 
 // IGDB 图片 API
