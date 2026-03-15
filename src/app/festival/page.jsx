@@ -184,8 +184,13 @@ export default function FestivalPage() {
     return <div className="min-h-screen bg-background" />; // 或者返回一个骨架屏
   }
 
-  // 1. 画廊 (大图展示) - 取前 8 个
-  const galleryGames = displayPool.slice(0, 8);
+  // 1. 画廊 (大图展示) - 取前 8 个，强制使用 Steam CDN
+  const galleryGames = displayPool.slice(0, 8).map(game => ({
+    ...game,
+    background_image: (game.gameid && String(game.gameid).length < 10)
+      ? `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/library_hero.jpg`
+      : game.background_image
+  }));
   
   // 2. 依次分配下方模块，使用 offset 确保完全不重复
   const card1Game = displayPool[8] || displayPool[0];
@@ -225,7 +230,7 @@ export default function FestivalPage() {
     
     return {
       gameid: game.gameid,
-      image: game.background_image,
+      image: game.background_image, // 此时 background_image 已经是 IGDB 增强后的路径
       title: getChineseName(game.title),
       category: simplifyThemeName(theme)
     }

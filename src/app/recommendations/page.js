@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Background from '../_components/background';
 import CustomImage from '../_components/custom-image';
-import { API_BASE, enrichGamesWithIGDB, getChineseName, igdb, IMAGE_API, IMAGE_SIZES } from '@/config';
+import { API_BASE, enrichGamesWithIGDB, getChineseName, igdb, IMAGE_API, IMAGE_SIZES, getSteamCoverUrl } from '@/config';
 import LoadingScreen from '@/app/_components/loading-screen';
 import { SmartImage } from '@/components/common/smart-image';
 
@@ -98,7 +98,7 @@ function SteamPlatformIcons() {
 function SteamLandscapeCard({ game, size = 'small' }) {
   const appId = game.product_id || game.app_id || game.appid;
   const title = game.name || game.title || `Game ${appId}`;
-  const coverUrl = game.background_image || game.cover_url;
+  const coverUrl = game.background_image || game.cover_url || (appId ? getSteamCoverUrl(appId, 'header') : null);
 
   return (
     <Link href={`/games/${appId}`} className="group relative block aspect-[16/9] w-full bg-[#0e141d] rounded-xl overflow-hidden shadow-2xl transition-all duration-300 hover:scale-[1.02] border border-white/5 hover:border-white/20">
@@ -147,13 +147,13 @@ function SteamFeatureGrid({ games }) {
       {/* 第一行: 2个大的 */}
       <div className="grid grid-cols-2 gap-4">
         {displayGames.slice(0, 2).map((game, i) => (
-          <SteamLandscapeCard key={game.id || i} game={game} size="large" />
+          <SteamLandscapeCard key={game.appid || game.id || game.product_id || i} game={game} size="large" />
         ))}
       </div>
       {/* 第二行: 3个小的 */}
       <div className="grid grid-cols-3 gap-4">
         {displayGames.slice(2, 5).map((game, i) => (
-          <SteamLandscapeCard key={game.id || i} game={game} />
+          <SteamLandscapeCard key={game.appid || game.id || game.product_id || i} game={game} />
         ))}
       </div>
     </div>
@@ -376,8 +376,8 @@ export default function RecommendationsPage() {
                 <div className="h-[1px] flex-grow bg-white/10" />
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {recentlyPlayed.slice(0, 5).map(game => (
-                  <SteamLandscapeCard key={game.id} game={game} />
+                {recentlyPlayed.slice(0, 5).map((game, i) => (
+                  <SteamLandscapeCard key={game.appid || game.id || game.product_id || i} game={game} />
                 ))}
               </div>
             </div>

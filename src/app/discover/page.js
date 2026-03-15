@@ -56,10 +56,7 @@ async function fetchGames(params) {
     }
 
     if (params.platforms) {
-      const igdbPlatformId = IGDB_PLATFORMS[params.platforms];
-      if (igdbPlatformId) {
-        whereClause += ` & platforms = ${igdbPlatformId}`;
-      }
+      whereClause += ` & platforms.slug = "${params.platforms}"`;
     }
 
     // 处理时间区间
@@ -100,7 +97,7 @@ async function fetchGames(params) {
     }
 
     const query = `
-      fields id, name, cover.image_id, artworks.image_id, aggregated_rating, genres.name, genres.slug, platforms.name, first_release_date;
+      fields id, name, cover.image_id, artworks.image_id, aggregated_rating, genres.name, genres.slug, platforms.name, platforms.slug, first_release_date;
       ${searchPart}
       ${orderClause ? orderClause + ';' : ''}
       where ${whereClause};
@@ -120,7 +117,7 @@ async function fetchGames(params) {
         rating: g.aggregated_rating,
         released: g.first_release_date ? new Date(g.first_release_date * 1000).toISOString().split('T')[0] : null,
         genres: g.genres?.map(gg => gg.name) || [],
-        platforms: g.platforms?.map(p => ({ platform: { name: p.name } })) || []
+        platforms: g.platforms?.map(p => ({ platform: { name: p.name, slug: p.slug } })) || []
       })),
       pagination: {
         page: params.page || 1,
@@ -168,7 +165,8 @@ function getCardPlatforms(game) {
 
   platforms.forEach(p => {
     const slug = (p.platform?.slug || p.slug || '').toLowerCase();
-    let key = 'pc';
+    let key = null;
+    
     if (slug.includes('playstation')) key = 'playstation';
     else if (slug.includes('xbox')) key = 'xbox';
     else if (slug.includes('nintendo') || slug.includes('switch')) key = 'nintendo';
@@ -176,10 +174,11 @@ function getCardPlatforms(game) {
     else if (slug.includes('android')) key = 'android';
     else if (slug.includes('linux')) key = 'linux';
     else if (slug.includes('mac')) key = 'mac';
+    else if (slug.includes('win') || slug.includes('pc') || slug.includes('steam') || slug.includes('web')) key = 'pc';
 
-    if (!seen.has(key)) {
+    if (key && !seen.has(key)) {
       seen.add(key);
-      result.push(platformConfig[key] || { name: 'PC' });
+      result.push(platformConfig[key]);
     }
   });
 
@@ -344,19 +343,6 @@ function GameListItem({ game }) {
   );
 }
 
-// 平台选项
-const PLATFORM_OPTIONS = [
-  { value: '', label: '所有平台' },
-  { value: '1', label: 'PC' },
-  { value: '2', label: 'Playstation' },
-  { value: '3', label: 'Xbox' },
-  { value: '4', label: 'iOS' },
-  { value: '5', label: 'Android' },
-  { value: '6', label: 'Mac' },
-  { value: '7', label: 'Linux' },
-  { value: '8', label: 'Nintendo' },
-];
-
 // 日期选项
 const DATE_OPTIONS = [
   { value: '', label: '不限时间' },
@@ -372,6 +358,19 @@ const SORT_OPTIONS = [
   { value: '-rating', label: '用户评分' },
   { value: '-released', label: '发售日期' },
   { value: 'name', label: '名称' },
+];
+
+// 平台选项
+const PLATFORM_OPTIONS = [
+  { value: '', label: '所有平台' },
+  { value: 'win', label: 'PC (Windows)' },
+  { value: 'playstation5', label: 'PlayStation 5' },
+  { value: 'xbox-series-x-s', label: 'Xbox Series X|S' },
+  { value: 'switch', label: 'Nintendo Switch' },
+  { value: 'macos', label: 'macOS' },
+  { value: 'linux', label: 'Linux' },
+  { value: 'android', label: 'Android' },
+  { value: 'ios', label: 'iOS' },
 ];
 
 function FilterDropdown({ label, options, value, onChange, icon }) {
@@ -433,7 +432,7 @@ export default function DiscoverPage() {
   const [filters, setFilters] = useState({
     page: 1,
     page_size: 60,
-    ordering: '-added',
+    ordering: '-metacritic',
     genres: '',
     platforms: '',
     dates: '',
@@ -470,7 +469,7 @@ export default function DiscoverPage() {
       });
 
       const enrichedGames = await enrichGamesWithIGDB(data.games || []);
-      
+
       setGames(enrichedGames);
       setPagination(data.pagination);
     } catch (error) {
@@ -495,7 +494,7 @@ export default function DiscoverPage() {
     handleFilterChange('search', term);
   };
 
-  const activeFilterCount = [filters.platforms, filters.genres, filters.dates].filter(Boolean).length;
+  const activeFilterCount = [filters.genres, filters.dates, filters.platforms].filter(Boolean).length;
 
   if (initialLoad) {
     return <LoadingScreen />;
@@ -544,19 +543,19 @@ export default function DiscoverPage() {
               />
 
               <FilterDropdown
-                label="所有平台"
-                options={PLATFORM_OPTIONS}
-                value={filters.platforms}
-                onChange={(v) => handleFilterChange('platforms', v)}
-                icon={<svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
-              />
-
-              <FilterDropdown
                 label="所有类型"
                 options={[{ value: '', label: '所有类型' }, ...genres.map(g => ({ value: g.slug, label: genreTranslationMap[g.name] || g.name }))]}
                 value={filters.genres}
                 onChange={(v) => handleFilterChange('genres', v)}
                 icon={<svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>}
+              />
+
+              <FilterDropdown
+                label="所有平台"
+                options={PLATFORM_OPTIONS}
+                value={filters.platforms}
+                onChange={(v) => handleFilterChange('platforms', v)}
+                icon={<svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
               />
 
               <FilterDropdown
@@ -581,8 +580,8 @@ export default function DiscoverPage() {
           {(activeFilterCount > 0 || filters.ordering !== '-added') && (
             <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#2d0a3e] justify-end">
               {filters.dates && <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ff00ff]/20 text-[#ff00ff] text-xs rounded">{DATE_OPTIONS.find(o => o.value === filters.dates)?.label}<button onClick={() => handleFilterChange('dates', '')}>✕</button></span>}
-              {filters.platforms && <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ff00ff]/20 text-[#ff00ff] text-xs rounded">{PLATFORM_OPTIONS.find(o => o.value === filters.platforms)?.label}<button onClick={() => handleFilterChange('platforms', '')}>✕</button></span>}
               {filters.genres && <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ff00ff]/20 text-[#ff00ff] text-xs rounded">{genres.find(g => g.slug === filters.genres)?.name}<button onClick={() => handleFilterChange('genres', '')}>✕</button></span>}
+              {filters.platforms && <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ff00ff]/20 text-[#ff00ff] text-xs rounded">{PLATFORM_OPTIONS.find(o => o.value === filters.platforms)?.label}<button onClick={() => handleFilterChange('platforms', '')}>✕</button></span>}
               <button onClick={() => setFilters({ page: 1, page_size: 60, ordering: '-added', genres: '', platforms: '', dates: '', search: '' })} className="text-xs text-slate-500 hover:text-[#ff00ff]">清除全部</button>
             </div>
           )}
@@ -610,8 +609,10 @@ export default function DiscoverPage() {
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="relative">
-              <div className="w-20 h-20 border-[3px] border-transparent border-t-[#ff00ff] border-r-[#00ffff] rounded-full animate-spin"></div>
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 border-[3px] border-transparent border-b-[#ff00ff] border-l-[#00ffff] rounded-full animate-[spin_1.5s_linear_reverse]"></div>
+              <div className="w-12 h-12 border-2 border-white/20 border-t-[#ff00ff] rounded-full animate-spin"></div>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                <div className="w-2 h-2 bg-[#ff00ff] rounded-full animate-ping"></div>
+              </div>
             </div>
           </div>
         ) : (

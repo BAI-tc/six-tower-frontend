@@ -156,7 +156,7 @@ export const enrichGamesWithIGDB = async (games) => {
   const existingImages = {};
 
   games.forEach(game => {
-    const appId = String(game.gameid || game.appid || game.id || game.product_id);
+    const appId = String(game.app_id || game.appid || game.gameid || game.product_id || game.id);
     if (!appId || appId === 'undefined' || appId === 'null') return;
 
     // 只有当图片已经是 IGDB 的时候，才认为不需要补全
@@ -171,7 +171,7 @@ export const enrichGamesWithIGDB = async (games) => {
     try {
       const idsParam = gamesNeedEnrich.map(id => `"${id}"`).join(',');
       const results = await igdb.request('/games', `
-        fields name, cover.image_id, artworks.image_id, external_games.uid;
+        fields name, cover.image_id, artworks.image_id, screenshots.image_id, external_games.uid;
         where external_games.category = 1 & external_games.uid = (${idsParam});
         limit 100;
       `);
@@ -184,9 +184,11 @@ export const enrichGamesWithIGDB = async (games) => {
             existingImages[steamId] = {
               landscape: res.artworks && res.artworks.length > 0
                 ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${res.artworks[0].image_id}.jpg`
-                : (res.cover?.image_id ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${res.cover.image_id}.jpg` : null),
+                : (res.screenshots && res.screenshots.length > 0 
+                    ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${res.screenshots[0].image_id}.jpg`
+                    : (res.cover?.image_id ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${res.cover.image_id}.jpg` : null)),
               portrait: res.cover?.image_id
-                ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${res.cover.image_id}.jpg`
+                ? `${IMAGE_API}/${IMAGE_SIZES['c-big']}/${res.cover.image_id}.jpg`
                 : null
             };
           }
@@ -198,7 +200,7 @@ export const enrichGamesWithIGDB = async (games) => {
   }
 
   return games.map(game => {
-    const appId = String(game.gameid || game.appid || game.id || game.product_id);
+    const appId = String(game.app_id || game.appid || game.gameid || game.product_id || game.id);
     const backgroundImage = existingImages[appId];
     let enrichedGame = { ...game };
 

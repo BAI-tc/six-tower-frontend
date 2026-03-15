@@ -330,7 +330,7 @@ export default function ProfilePage() {
                   >
                     <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 mb-3 relative group">
                       <SmartImage
-                        src={game.background_image}
+                        src={game.background_image || `https://cdn.akamai.steamstatic.com/steam/apps/${game.appid}/header.jpg`}
                         alt={game.name}
                         gameid={game.appid}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 opacity-80 group-hover:opacity-100"
@@ -418,14 +418,14 @@ export default function ProfilePage() {
                   >
                     <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 mb-3 relative group">
                       <SmartImage
-                        src={game.background_image}
+                        src={game.background_image || `https://cdn.akamai.steamstatic.com/steam/apps/${game.appid}/header.jpg`}
                         alt={game.name}
                         gameid={game.appid}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 opacity-80 group-hover:opacity-100"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity"></div>
                     </div>
-                    <p className="text-sm font-bold text-neutral-800 truncate px-1 group-hover:text-[var(--game-gold)] transition-colors">
+                    <p className="text-sm font-bold text-white truncate px-1 group-hover:text-blue-400 transition-colors">
                       {getChineseName(game.name)}
                     </p>
                     <p className="text-xs font-black text-neutral-400 px-1 mt-1 tracking-wider">
