@@ -95,11 +95,16 @@ async function fetchGameFromBackend(steamAppId) {
 // 从 IGDB 获取游戏详情
 async function fetchFromIGDB(id, isSteamId = false) {
   try {
-    let igdbGame = isSteamId ? await igdb.getBySteamId(id) : null;
-    if (!igdbGame) {
-      const results = await igdb.getGameDetails(id);
-      igdbGame = Array.isArray(results) ? results[0] : results;
+    // 如果是 Steam ID，先尝试通过 Steam ID 关联查询
+    if (isSteamId) {
+      const igdbGame = await igdb.getBySteamId(id);
+      if (igdbGame) return normalizeGameData(igdbGame, 'igdb');
+      // 如果通过 Steam ID 没找到，不要再用数字 ID 查询（会查询到错误的 IGDB 游戏）
+      return null;
     }
+    // 只有非 Steam ID（如纯数字字符串）才直接用 IGDB ID 查询
+    const results = await igdb.getGameDetails(id);
+    const igdbGame = Array.isArray(results) ? results[0] : results;
     if (igdbGame) return normalizeGameData(igdbGame, 'igdb');
   } catch (error) {
     console.error('[IGDB] Fetch detail failed:', error);
