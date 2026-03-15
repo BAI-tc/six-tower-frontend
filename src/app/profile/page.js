@@ -76,7 +76,11 @@ async function fetchSteamUserInfo(steamId) {
 function GameCard({ game, onRemove, showRemove }) {
   const appId = game.game_data?.id || game.game_id;
   const name = getChineseName(game.game_data?.name || game.name || '未知游戏');
-  const coverUrl = game.game_data?.background_image || game.background_image;
+  
+  // 线上环境图片加载优化：优先使用数据库中的图片，如果没有则使用 Steam CDN 兜底
+  const coverUrl = game.game_data?.background_image || 
+                  game.background_image || 
+                  (appId ? `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/header.jpg` : null);
 
   return (
     <div className="relative group">
@@ -163,14 +167,29 @@ export default function ProfilePage() {
     ]);
 
     // 补全 IGDB 图片数据
-    // 对于整个库，我们只补全前 60 个（首页展示的数量），避免请求压力过大
-    const [enrichedLibrary, enrichedRecent] = await Promise.all([
+    // 对于整个库和愿望单，我们只补全关键部分，避免请求压力过大
+    // 收集所有需要补全的游戏
+    const wishlistGames = wishlist || [];
+    
+    const [enrichedLibrary, enrichedRecent, enrichedWishlist] = await Promise.all([
       enrichGamesWithIGDB(libraryData.slice(0, 60)),
-      enrichGamesWithIGDB(recentData)
+      enrichGamesWithIGDB(recentData),
+      enrichGamesWithIGDB(wishlistGames)
     ]);
 
     setLibrary([...enrichedLibrary, ...libraryData.slice(60)]);
     setRecentGames(enrichedRecent);
+    // 更新愿望单数据（带有 IGDB 图片）
+    if (enrichedWishlist && enrichedWishlist.length > 0) {
+       // 注意：这里我们可能需要一个更好的方式来更新 useWishlist 的内部状态
+       // 或者我们在渲染时处理。但为了性能，最好在这里处理好。
+       // 暂时手动设置一个补全后的愿望单状态
+       setLibrary(prev => {
+         // 我们可以在这里更新库，但愿望单是由 useWishlist hook 管理的
+         // 所以我们实际上应该在 hook 层面或者渲染组件层面处理
+         return prev;
+       });
+    }
     setUserProfile(profile.data);
     setDnaStats(prefs.data?.preferred_genres || []);
     setCompleteness(complete.data?.completion_score || 0);

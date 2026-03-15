@@ -230,7 +230,11 @@ export default function FestivalPage() {
     
     return {
       gameid: game.gameid,
-      image: game.background_image, // 此时 background_image 已经是 IGDB 增强后的路径
+      // 优先使用 IGDB 的图片，如果是 Steam 游戏且 IGDB 失败，则使用 Steam Header 兜底
+      image: game.background_image || 
+             (game.gameid && String(game.gameid).length < 10 
+               ? `https://cdn.akamai.steamstatic.com/steam/apps/${game.gameid}/header.jpg` 
+               : null),
       title: getChineseName(game.title),
       category: simplifyThemeName(theme)
     }
