@@ -198,7 +198,7 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
         id: game.gameid,
         title: getChineseName(game.title),
         category: translatedTheme || "为你推荐",
-        image: game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/library_600x900.jpg`,
+        image: game.background_image || game.cover_url,
         featured: index < 3,
         color: ["from-blue-500/20 to-purple-500/20", "from-green-500/20 to-teal-500/20", "from-orange-500/20 to-red-500/20"][index % 3],
         rating: game.metacritic || "4.8",
@@ -288,7 +288,7 @@ export function GameGallery({ games = defaultGames, recommendationData = null })
               {recommendationData ? (
                 <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
                   <div className="text-muted-foreground text-lg font-medium">
-                    {emotionalQuotes[Math.floor(Math.random() * emotionalQuotes.length)]}
+                    {emotionalQuotes[0]}
                   </div>
                 </div>
               ) : (

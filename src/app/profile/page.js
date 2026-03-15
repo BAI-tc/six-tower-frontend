@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { API_BASE, ULTIM_API_BASE, getSteamCoverUrl, RAWG_API_URL, RAWG_API_KEY, enrichGamesWithRAWG, getChineseName } from '@/config';
+import { API_BASE, ULTIM_API_BASE, enrichGamesWithIGDB, getChineseName, igdb, IMAGE_API, IMAGE_SIZES } from '@/config';
 import { useWishlist } from '@/hooks/useWishlist';
 import LoadingScreen from '@/app/_components/loading-screen';
 import { SmartImage } from '@/components/common/smart-image';
@@ -162,11 +162,11 @@ export default function ProfilePage() {
       fetchInteractionHistory(steamId)
     ]);
 
-    // 补全 RAWG 图片数据
+    // 补全 IGDB 图片数据
     // 对于整个库，我们只补全前 60 个（首页展示的数量），避免请求压力过大
     const [enrichedLibrary, enrichedRecent] = await Promise.all([
-      enrichGamesWithRAWG(libraryData.slice(0, 60)),
-      enrichGamesWithRAWG(recentData)
+      enrichGamesWithIGDB(libraryData.slice(0, 60)),
+      enrichGamesWithIGDB(recentData)
     ]);
 
     setLibrary([...enrichedLibrary, ...libraryData.slice(60)]);
@@ -330,7 +330,7 @@ export default function ProfilePage() {
                   >
                     <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 mb-3 relative group">
                       <SmartImage
-                        src={game.background_image || getSteamCoverUrl(game.appid, 'capsule_231x87')}
+                        src={game.background_image}
                         alt={game.name}
                         gameid={game.appid}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 opacity-80 group-hover:opacity-100"
@@ -418,7 +418,7 @@ export default function ProfilePage() {
                   >
                     <div className="aspect-video rounded-lg overflow-hidden bg-[#1a1a2e]/40 border border-white/5 mb-3 relative group">
                       <SmartImage
-                        src={game.background_image || getSteamCoverUrl(game.appid, 'capsule_231x87')}
+                        src={game.background_image}
                         alt={game.name}
                         gameid={game.appid}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 opacity-80 group-hover:opacity-100"

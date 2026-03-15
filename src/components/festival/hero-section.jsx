@@ -23,7 +23,7 @@ export function FestivalHeroSection() {
             style={{
               left: `${(i % 4) * 25}%`,
               top: `${Math.floor(i / 4) * 33}%`,
-              transform: `rotate(${Math.random() * 20 - 10}deg)`,
+              transform: `rotate(${(i * 7) % 20 - 10}deg)`,
             }}
           >
             2026

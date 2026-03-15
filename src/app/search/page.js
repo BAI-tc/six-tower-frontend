@@ -3,46 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { RAWG_API_URL, RAWG_API_KEY } from '@/config';
 import LoadingScreen from '@/app/_components/loading-screen';
+import { igdb, IMAGE_API, IMAGE_SIZES, genreTranslationMap } from '@/config';
 import { WishlistButton } from '@/hooks/useWishlist';
-
-// 类型翻译映射
-const genreTranslationMap = {
-  'Action': '动作',
-  'Role-Playing': '角色扮演',
-  'RPG': '角色扮演',
-  'Strategy': '策略',
-  'Adventure': '冒险',
-  'Simulation': '模拟',
-  'Sports': '体育',
-  'Racing': '竞速',
-  'Massively Multiplayer': '多人在线',
-  'Shooter': '射击',
-  'Puzzle': '益智',
-  'Indie': '独立',
-  'Platformer': '平台跳跃',
-  'Fighting': '格斗',
-  'Casual': '休闲',
-  'Arcade': '街机',
-  'Educational': '教育',
-  'Card': '卡牌',
-  'Family': '家庭',
-  'Open World': '开放世界',
-  'Survival': '生存',
-  'Horror': '恐怖',
-  'Sci-fi': '科幻',
-  'Sandbox': '沙盒',
-  'Co-op': '联机',
-  'Singleplayer': '单人',
-  'Multiplayer': '多人',
-  'Fantasy': '奇幻',
-  'First-Person': '第一人称',
-  'Third-Person': '第三人称',
-  'Historical': '历史',
-  'Atmospheric': '氛围',
-  'Space': '太空'
-};
 
 export default function Search() {
   const searchParams = useSearchParams();
@@ -59,16 +22,19 @@ export default function Search() {
   const searchGames = async (searchQuery) => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&search=${encodeURIComponent(searchQuery)}&page_size=30`,
-        { cache: 'no-store' }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setGames(data.results || []);
-      }
+      const results = await igdb.search(searchQuery);
+      // 转换数据格式以适配现有 UI
+      const mappedGames = Array.isArray(results) ? results.map(game => ({
+        ...game,
+        // IGDB 使用 cover.image_id
+        background_image: game.cover ? `${IMAGE_API}/${IMAGE_SIZES['c-big']}/${game.cover.image_id}.jpg` : null,
+        // 映射评分为 metacritic 风格以便显示
+        metacritic: game.aggregated_rating ? Math.round(game.aggregated_rating) : null
+      })) : [];
+      setGames(mappedGames);
     } catch (error) {
       console.error('Error searching games:', error);
+      setGames([]);
     }
     setIsLoading(false);
   };

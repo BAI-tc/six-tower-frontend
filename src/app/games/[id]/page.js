@@ -8,44 +8,8 @@ import { useState, useEffect } from 'react';
 export const dynamic = 'force-dynamic';
 
 // 核心类型翻译映射
-const genreTranslationMap = {
-  'Action': '动作',
-  'Role-Playing': '角色扮演',
-  'RPG': '角色扮演',
-  'Strategy': '策略',
-  'Adventure': '冒险',
-  'Simulation': '模拟',
-  'Sports': '体育',
-  'Racing': '竞速',
-  'Massively Multiplayer': '多人在线',
-  'Shooter': '射击',
-  'Puzzle': '益智',
-  'Indie': '独立',
-  'Platformer': '平台跳跃',
-  'Fighting': '格斗',
-  'Casual': '休闲',
-  'Arcade': '街机',
-  'Educational': '教育',
-  'Card': '卡牌',
-  'Family': '家庭',
-  'Open World': '开放世界',
-  'Survival': '生存',
-  'Horror': '恐怖',
-  'Sci-fi': '科幻',
-  'Sandbox': '沙盒',
-  'Co-op': '联机',
-  'Singleplayer': '单人',
-  'Multiplayer': '多人',
-  'Fantasy': '奇幻',
-  'First-Person': '第一人称',
-  'Third-Person': '第三人称',
-  'Historical': '历史',
-  'Atmospheric': '氛围',
-  'Space': '太空'
-};
-
 import LoadingScreen from '@/app/_components/loading-screen';
-import { RAWG_API_URL, RAWG_API_KEY, API_BASE } from '@/config';
+import { API_BASE, igdb, IMAGE_API, IMAGE_SIZES, genreTranslationMap } from '@/config';
 import { SmartImage } from '@/components/common/smart-image';
 import { WishlistButton } from '@/hooks/useWishlist';
 
@@ -63,20 +27,20 @@ async function fetchGameFromBackend(steamAppId) {
       if (data.code === 200 && data.data) {
         const g = data.data;
         return {
-          name: g.name,
+          name: g.app_name || g.name,
           background_image: g.background_image,
           description: g.description,
           released: g.release_date,
           metacritic: g.metacritic,
           rating: g.metacritic ? g.metacritic / 20 : null,
-          steam_app_id: parseInt(g.appid),
+          steam_app_id: parseInt(g.app_id),
           developers: g.developer ? [{ name: g.developer }] : [],
           publishers: g.publisher ? [{ name: g.publisher }] : [],
           genres: g.genres?.map(name => ({ name })) || [],
           website: g.website,
           price: g.price,
           _fromBackend: true,
-          id: g.id || g.appid // 确保有 RAWG ID 的回退
+          id: g.id || g.app_id
         };
       }
     }
@@ -86,12 +50,65 @@ async function fetchGameFromBackend(steamAppId) {
   return null;
 }
 
+// 从 IGDB 获取游戏详情
+async function fetchFromIGDB(id, isSteamId = false) {
+  try {
+    let igdbGame = null;
+    if (isSteamId) {
+      // 1. 先尝试作为 Steam ID 获取
+      igdbGame = await igdb.getBySteamId(id);
+      
+      // 2. 如果没找到，尝试直接作为 IGDB ID 获取 (发现页过来的 ID 是 IGDB ID)
+      if (!igdbGame) {
+        igdbGame = await igdb.getGameDetails(id);
+        if (Array.isArray(igdbGame)) igdbGame = igdbGame[0];
+      }
+    } else {
+      igdbGame = await igdb.getGameDetails(id);
+      if (Array.isArray(igdbGame)) igdbGame = igdbGame[0];
+    }
+
+    if (igdbGame) {
+      return {
+        ...igdbGame,
+        name: igdbGame.name,
+        background_image: igdbGame.artworks?.[0]?.image_id 
+          ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${igdbGame.artworks[0].image_id}.jpg`
+          : (igdbGame.cover?.image_id ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${igdbGame.cover.image_id}.jpg` : null),
+        cover_url: igdbGame.cover?.image_id ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${igdbGame.cover.image_id}.jpg` : null,
+        description: igdbGame.summary,
+        released: igdbGame.release_dates?.[0]?.human || igdbGame.first_release_date 
+          ? new Date(igdbGame.first_release_date * 1000).toLocaleDateString() : null,
+        metacritic: igdbGame.aggregated_rating ? Math.round(igdbGame.aggregated_rating) : null,
+        rating: igdbGame.aggregated_rating ? igdbGame.aggregated_rating / 20 : null,
+        genres: igdbGame.genres?.map(g => ({ name: g.name })) || [],
+        developers: igdbGame.involved_companies?.filter(c => c.developer).map(c => ({ name: c.company.name })) || [],
+        publishers: igdbGame.involved_companies?.filter(c => c.publisher).map(c => ({ name: c.company.name })) || [],
+        website: igdbGame.websites?.find(w => w.category === 1)?.url, // 1 是官方网站
+        storyline: igdbGame.storyline,
+        game_modes: igdbGame.game_modes?.map(m => m.name) || [],
+        themes: igdbGame.themes?.map(t => t.name) || [],
+        player_perspectives: igdbGame.player_perspectives?.map(p => p.name) || [],
+        game_engines: igdbGame.game_engines?.map(e => e.name) || [],
+        _fromIGDB: true
+      };
+    }
+  } catch (error) {
+    console.error('[IGDB] Fetch detail failed:', error);
+  }
+  return null;
+}
+
 // 统一获取游戏详情（带增强逻辑）
 async function fetchGameFullDetail(id) {
   const numericId = parseInt(id, 10);
   const isSteamId = !isNaN(numericId) && /^\d+$/.test(String(id).trim());
 
-  // 1. 优先尝试后端 (后端已内置 RAWG 补全逻辑)
+  // 1. 优先尝试从 IGDB 获取
+  const igdbData = await fetchFromIGDB(id, isSteamId);
+  if (igdbData) return igdbData;
+
+  // 2. 尝试从后端代理获取 (包含 Steam 增强)
   if (isSteamId) {
     const backendData = await fetchGameFromBackend(numericId);
     if (backendData && backendData.description) {
@@ -99,30 +116,14 @@ async function fetchGameFullDetail(id) {
     }
   }
 
-  // 2. 如果后端没数据，尝试直接通过 RAWG ID/Slug 获取 (走代理)
-  const detailUrl = `${RAWG_API_URL}/games/${id}?key=${RAWG_API_KEY}`;
-  try {
-    const response = await fetch(detailUrl, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
-    if (response.ok) {
-      const data = await response.json();
-      return { ...data, _fromRAWG: true };
-    }
-  } catch (e) {
-    console.warn('[RAWG] Direct detail fetch failed');
-  }
-
-  // 3. 最后兜底：尝试 Steam 商店 (可能需要特殊网络环境)
-  if (isSteamId) {
-    return await fetchFromSteamStore(numericId);
-  }
-
   return null;
 }
 
-// 从 Steam Store API 获取游戏信息（RAWG失败时的备选）
+// 从 Steam Store API 获取游戏信息
 async function fetchFromSteamStore(steamAppId) {
   try {
-    const steamStoreUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppId}&l=schinese`;
+    // 使用后端代理解决 CORS 问题
+    const steamStoreUrl = `${API_BASE}/steam/proxy?appids=${steamAppId}&l=schinese`;
     const response = await fetch(steamStoreUrl, {
       signal: AbortSignal.timeout(10000)
     });
@@ -155,53 +156,25 @@ async function fetchFromSteamStore(steamAppId) {
   return null;
 }
 
-async function fetchRAWGMovies(gameId) {
+async function fetchIGDBScreenshots(gameId) {
   try {
-    const response = await fetch(
-      `${RAWG_API_URL}/games/${gameId}/movies?key=${RAWG_API_KEY}&page_size=10`,
-      { cache: 'no-store', signal: AbortSignal.timeout(10000) }
-    );
-    if (response.ok) {
-      const data = await response.json();
-      if (data.results) {
-        return data.results.map(m => ({
-          id: m.id,
-          name: m.name,
-          preview: m.preview,
-          data: m.data
-        }));
-      }
+    const results = await igdb.getScreenshots(gameId);
+    if (Array.isArray(results)) {
+      return results.map(s => ({
+        id: s.id,
+        image: `${IMAGE_API}/${IMAGE_SIZES['s-huge']}/${s.image_id}.jpg`
+      }));
     }
   } catch (error) {
-    console.error('Error fetching RAWG movies:', error);
-  }
-  return [];
-}
-
-async function fetchRAWGScreenshots(gameId) {
-  try {
-    const response = await fetch(
-      `${RAWG_API_URL}/games/${gameId}/screenshots?key=${RAWG_API_KEY}&page_size=20`,
-      { cache: 'no-store', signal: AbortSignal.timeout(10000) }
-    );
-    if (response.ok) {
-      const data = await response.json();
-      if (data.results) {
-        return data.results.map(s => ({
-          id: s.id,
-          image: s.image
-        }));
-      }
-    }
-  } catch (error) {
-    console.error('Error fetching RAWG screenshots:', error);
+    console.error('Error fetching IGDB screenshots:', error);
   }
   return [];
 }
 
 async function fetchSteamScreenshots(steamAppId) {
   try {
-    const steamStoreUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppId}&l=schinese`;
+    // 使用后端代理解决 CORS 问题
+    const steamStoreUrl = `${API_BASE}/steam/proxy?appids=${steamAppId}&l=schinese`;
     const response = await fetch(steamStoreUrl, { signal: AbortSignal.timeout(10000) });
     if (response.ok) {
       const data = await response.json();
@@ -248,22 +221,19 @@ export default function GameDetailPage() {
       const gameData = await fetchGameFullDetail(appIdStr);
 
       if (gameData) {
-        const rawgId = gameData.id;
-        
-        // 并行获取媒体资源，缩短总时间
-        const [steamScr, rawgScr, rawgMov] = await Promise.all([
+        // 并行获取截图
+        const [steamScr, igdbScr] = await Promise.all([
           (isSteamId && numericAppId) ? fetchSteamScreenshots(numericAppId).catch(() => []) : Promise.resolve([]),
-          rawgId ? fetchRAWGScreenshots(rawgId).catch(() => []) : Promise.resolve([]),
-          rawgId ? fetchRAWGMovies(rawgId).catch(() => []) : Promise.resolve([])
+          gameData._fromIGDB ? fetchIGDBScreenshots(gameData.id).catch(() => []) : Promise.resolve([])
         ]);
 
-        const allScreenshots = [...steamScr, ...rawgScr];
+        const allScreenshots = [...steamScr, ...igdbScr];
         if (allScreenshots.length > 0) {
           const uniqueScreenshots = Array.from(new Map(allScreenshots.map(item => [item.image, item])).values());
           setScreenshots(uniqueScreenshots);
         }
-        
-        setMovies(rawgMov || []);
+
+        setMovies([]); // 暂时禁用视频
         setGame(gameData);
       } else {
         console.log('❌ All sources failed for Game:', appIdStr);
@@ -287,7 +257,7 @@ export default function GameDetailPage() {
     </div>
   );
 
-  const posterUrl = game.background_image || `https://placehold.co/600x900/1a1a2e/ffffff?text=${encodeURIComponent(game.name || 'Game')}`;
+  const posterUrl = game.background_image;
 
   return (
     <div className="min-h-screen bg-[#1a0a2e]">
@@ -325,6 +295,53 @@ export default function GameDetailPage() {
               <div><span className="text-slate-500 block text-xs font-bold uppercase tracking-widest mb-1.5">发行日期</span><span className="text-white font-bold">{game.released || '未知'}</span></div>
               {game.developers?.length > 0 && <div><span className="text-slate-500 block text-xs font-bold uppercase tracking-widest mb-1.5">开发商</span><span className="text-[#beee11] font-bold">{game.developers[0].name}</span></div>}
               {game.playtime > 0 && <div><span className="text-slate-500 block text-xs font-bold uppercase tracking-widest mb-1.5">平均游玩时长</span><span className="text-white font-bold">{game.playtime} 小时</span></div>}
+
+              {(game.game_modes?.length > 0 || game.player_perspectives?.length > 0) && (
+                <div className="pt-4 border-t border-white/5 flex flex-col gap-4">
+                  {game.game_modes?.length > 0 && (
+                    <div>
+                      <span className="text-slate-500 block text-xs font-bold uppercase tracking-widest mb-2">游戏模式</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {game.game_modes.map(mode => (
+                          <span key={mode} className="text-[10px] bg-white/5 border border-white/10 px-2 py-0.5 rounded text-slate-300">
+                            {genreTranslationMap[mode] || mode}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {game.player_perspectives?.length > 0 && (
+                    <div>
+                      <span className="text-slate-500 block text-xs font-bold uppercase tracking-widest mb-2">视角</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {game.player_perspectives.map(p => (
+                          <span key={p} className="text-[10px] bg-white/5 border border-white/10 px-2 py-0.5 rounded text-slate-300">
+                            {genreTranslationMap[p] || p}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {game.themes?.length > 0 && (
+                    <div>
+                      <span className="text-slate-500 block text-xs font-bold uppercase tracking-widest mb-2">主题风格</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {game.themes.map(t => (
+                          <span key={t} className="text-[10px] bg-[#beee11]/5 border border-[#beee11]/10 px-2 py-0.5 rounded text-[#beee11]/80">
+                            {genreTranslationMap[t] || t}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {game.game_engines?.length > 0 && (
+                    <div>
+                      <span className="text-slate-500 block text-xs font-bold uppercase tracking-widest mb-1.5">引擎</span>
+                      <span className="text-white text-xs font-bold">{game.game_engines.join(', ')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {game.tags?.length > 0 && (
                 <div className="pt-4 border-t border-white/5">
@@ -443,6 +460,17 @@ export default function GameDetailPage() {
               {activeTab === 'summary' && (
                 <div className="flex flex-col gap-8 animate-fade-in-up">
                   <div className="bg-[#1a0a2e]/40 p-10 rounded-[2.5rem] border border-white/5 prose prose-invert max-w-none prose-p:text-slate-400 prose-p:leading-loose prose-h3:text-white prose-h2:text-white prose-h3:mt-8 prose-h3:mb-4">
+                    {game.storyline && (
+                      <div className="mb-8 pb-8 border-b border-white/10">
+                        <h2 className="text-[#beee11] text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-3">
+                          <div className="w-1 h-6 bg-[#beee11] rounded-full"></div>
+                          背景故事
+                        </h2>
+                        <p className="text-slate-300 text-lg leading-relaxed italic">
+                          {game.storyline}
+                        </p>
+                      </div>
+                    )}
                     <div dangerouslySetInnerHTML={{ 
                       __html: (game.description || '暂无详细描述。') 
                     }} />

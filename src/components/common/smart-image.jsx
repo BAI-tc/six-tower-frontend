@@ -24,21 +24,8 @@ export function SmartImage({
 
   const handleError = () => {
     if (hasError) return // 防止无限循环
-
-    // 如果 RAWG 图片加载失败，尝试使用 Steam Header
-    if (currentSrc && currentSrc.includes('rawg.io') && gameid) {
-      const steamHeader = `https://steamcdn-a.akamaihd.net/steam/apps/${gameid}/header.jpg`
-      if (currentSrc !== steamHeader) {
-        console.warn(`[SmartImage] RAWG image failed, falling back to Steam: ${gameid}`)
-        setCurrentSrc(steamHeader)
-        return
-      }
-    }
-
-    // 如果 Steam Header 也失败或没有 gameid，使用占位图
-    console.error(`[SmartImage] All image sources failed for: ${alt}`)
+    console.warn(`[SmartImage] Image failed to load: ${alt}`)
     setHasError(true)
-    setCurrentSrc(`https://placehold.co/600x400/1a1a2e/ffffff?text=${encodeURIComponent(alt || 'Game')}`)
   }
 
   return (

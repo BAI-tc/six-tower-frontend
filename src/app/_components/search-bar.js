@@ -3,8 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { RAWG_API_URL, RAWG_API_KEY } from '@/config';
+import { igdb, IMAGE_API, IMAGE_SIZES } from '@/config';
 import { useSearchHistory } from '@/hooks/useSearchHistory';
+
+// 构建 IGDB 图片 URL
+const getIGDBCoverUrl = (imageId) => {
+  if (!imageId) return null;
+  return `${IMAGE_API}/${IMAGE_SIZES['c-big']}/${imageId}.jpg`;
+};
 
 // 防抖 hook
 function useDebounce(value, delay) {
@@ -63,55 +69,50 @@ const RECOMMENDED_GAMES = [
 
 // 获取推荐游戏详情
 async function fetchRecommendedGames() {
-  const ids = RECOMMENDED_GAMES.map(g => g.id).join(',');
   try {
-    const res = await fetch(
-      `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&ids=${ids}`,
-      { cache: 'no-store' }
-    );
-    const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      return data.results.map(game => {
-        const rec = RECOMMENDED_GAMES.find(r => r.id === game.id);
+    const steamIds = RECOMMENDED_GAMES.map(g => `"${g.id}"`).join(',');
+    const results = await igdb.request('/games', `
+      fields name, cover.image_id, aggregated_rating, genres.name;
+      where external_games.category = 1 & external_games.uid = (${steamIds});
+      limit 10;
+    `);
+
+    if (Array.isArray(results) && results.length > 0) {
+      return results.map(game => {
+        const rec = RECOMMENDED_GAMES.find(r => String(r.id) === String(game.external_games?.[0]?.uid));
         return {
-          ...game,
-          reason: rec?.reason || game.genres?.[0]?.name || ''
+          id: game.id,
+          name: game.name,
+          background_image: getIGDBCoverUrl(game.cover?.image_id),
+          rating: game.aggregated_rating,
+          reason: rec?.reason || game.genres?.[0]?.name || '',
+          genres: game.genres?.map(g => g.name) || []
         };
       });
     }
   } catch (err) {
     console.error('Failed to fetch recommended games:', err);
   }
-  return [
-    { id: 4200, name: 'Portal 2', background_image: 'https://media.rawg.io/media/resize/1280/-/games/2ba/2bac0e87cf45e5b508f227d281c9252a.jpg', reason: '经典解谜', metacritic: 95 },
-    { id: 5286, name: 'Tomb Raider (2013)', background_image: 'https://media.rawg.io/media/games/021/021c4e21a1824d2526f925eff6324653.jpg', reason: '冒险之旅', metacritic: 86 }
-  ];
+  return [];
 }
 
 async function fetchHotGames() {
   try {
-    const today = new Date();
-    const lastYear = new Date();
-    lastYear.setFullYear(today.getFullYear() - 1);
-    const dateStr = `${lastYear.toISOString().split('T')[0]},${today.toISOString().split('T')[0]}`;
-    const res = await fetch(
-      `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&dates=${dateStr}&ordering=-added&page_size=4`,
-      { cache: 'no-store' }
-    );
-    const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      return data.results.map(game => ({
-        ...game,
-        reason: game.genres?.[0]?.name || '热门'
+    const results = await igdb.getPopular(4);
+    if (Array.isArray(results)) {
+      return results.map(game => ({
+        id: game.id,
+        name: game.name,
+        background_image: getIGDBCoverUrl(game.cover?.image_id),
+        metacritic: game.aggregated_rating ? Math.round(game.aggregated_rating) : null,
+        reason: game.genres?.[0]?.name || '热门',
+        genres: game.genres?.map(g => g.name) || []
       }));
     }
   } catch (err) {
     console.error('Failed to fetch hot games:', err);
   }
-  return [
-    { id: 3498, name: 'Grand Theft Auto V', background_image: 'https://media.rawg.io/media/games/20a/20aa03a10cda45239fe22d035c0ebe64.jpg', reason: 'Action', metacritic: 92 },
-    { id: 3328, name: 'The Witcher 3: Wild Hunt', background_image: 'https://media.rawg.io/media/games/618/618c2031a07bbff6b4f611f10b6bcdbc.jpg', reason: 'RPG', metacritic: 92 }
-  ];
+  return [];
 }
 
 // 搜索建议下拉组件
@@ -165,19 +166,21 @@ function SearchDropdown({
     const fetchGames = async () => {
       setLoading(true);
       try {
-        const res = await fetch(
-          `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&search=${encodeURIComponent(debouncedQuery)}&page_size=8&page=1`,
-          { cache: 'no-store' }
-        );
-        const data = await res.json();
-        if (data.results) {
-          setGames(data.results.map(game => ({
+        const results = await igdb.request('/games', `
+          fields name, cover.image_id, aggregated_rating, genres.name, platforms.name;
+          where cover.image_id != null;
+          search "${debouncedQuery.replace(/"/g, '\\"')}";
+          limit 8;
+        `);
+
+        if (Array.isArray(results)) {
+          setGames(results.map(game => ({
             id: game.id,
             name: game.name,
-            background_image: game.background_image,
-            metacritic: game.metacritic,
+            background_image: getIGDBCoverUrl(game.cover?.image_id),
+            metacritic: game.aggregated_rating ? Math.round(game.aggregated_rating) : null,
             genres: game.genres?.slice(0, 2).map(g => g.name) || [],
-            platforms: getPlatforms(game.platforms)
+            platforms: game.platforms?.map(p => ({ platform: { name: p.name } })) || []
           })));
         }
       } catch (err) {

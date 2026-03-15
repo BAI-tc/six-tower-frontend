@@ -11,7 +11,7 @@ import {
   BannerGameCard,
   VideoCard
 } from "@/components/festival/cards"
-import { enrichGamesWithRAWG, getChineseName } from "@/config"
+import { enrichGamesWithIGDB, getChineseName } from "@/config"
 
 // 主题名称翻译映射
 const themeNameMap = {
@@ -71,18 +71,8 @@ const personalizedCopyMap = {
 }
 
 // 获取动态个性化文案
-// 兜底高品质游戏池 (当推荐数量不足时使用) - RAWG 图片优先，Steam 后备
-const FALLBACK_GAMES = [
-  { gameid: "1245620", title: "ELDEN RING", background_image: "https://media.rawg.io/media/resize/1280/-/games/b29/b294fdd866dcdb643e7bab370a552855.jpg" },
-  { gameid: "413150", title: "Stardew Valley", background_image: "https://media.rawg.io/media/resize/1280/-/games/713/713269608dc8f2f40f5a670a14b2de94.jpg" },
-  { gameid: "1145360", title: "Hades", background_image: "https://media.rawg.io/media/resize/1280/-/games/1f4/1f47a270b8f241e4676b14d39ec620f7.jpg" },
-  { gameid: "374320", title: "Dark Souls III", background_image: "https://media.rawg.io/media/resize/1280/-/games/da1/da1b267764d77221f07a4386b6548e5a.jpg" },
-  { gameid: "105600", title: "Terraria", background_image: "https://media.rawg.io/media/games/f46/f466571d536f2e3ea9e815ad17177501.jpg" },
-  { gameid: "730", title: "Counter-Strike: Global Offensive", background_image: "https://media.rawg.io/media/games/736/73619bd336c894d6941d926bfd563946.jpg" },
-  { gameid: "271590", title: "Grand Theft Auto V", background_image: "https://media.rawg.io/media/games/20a/20aa03a10cda45239fe22d035c0ebe64.jpg" },
-  { gameid: "1174180", title: "Red Dead Redemption 2", background_image: "https://media.rawg.io/media/games/511/5118aff5091cb3efec399c808f8c598f.jpg" },
-  { gameid: "292030", title: "The Witcher 3: Wild Hunt", background_image: "https://media.rawg.io/media/games/618/618c2031a07bbff6b4f611f10b6bcdbc.jpg" }
-];
+// 兜底高品质游戏池 (当推荐数量不足时使用) - Steam 图片
+const FALLBACK_GAMES = [];
 
 const getDynamicCopy = (topPreferences) => {
   const defaultObj = {
@@ -130,15 +120,28 @@ function extractAllRecommendedGames(recommendations) {
   return games
 }
 
-// RAWG 数据补全已由全局 enrichGamesWithRAWG 接管，不再使用本地按名称搜索的低效方案
+// IGDB 数据补全由 enrichGamesWithIGDB 接管
 
 
 export default function FestivalPage() {
   const [recommendationData, setRecommendationData] = useState(null)
   const [allRecommendedGames, setAllRecommendedGames] = useState([])
+  const [isMounted, setIsMounted] = useState(false)
+  const [homeShownIds, setHomeShownIds] = useState([])
 
   useEffect(() => {
-    const steamId = typeof window !== 'undefined' ? localStorage.getItem('steam_id') : null
+    setIsMounted(true)
+    const steamId = localStorage.getItem('steam_id')
+    
+    // 获取首页已展示的游戏 ID
+    try {
+      const stored = sessionStorage.getItem('homepage_shown_ids');
+      if (stored) {
+        setHomeShownIds(JSON.parse(stored).map(id => String(id)));
+      }
+    } catch (e) {
+      console.warn('Failed to read homepage shown IDs', e);
+    }
 
     if (steamId) {
       fetch(`${ULTIM_API_BASE}/recommendations/player-preference?steam_id=${steamId}`)
@@ -149,7 +152,7 @@ export default function FestivalPage() {
           setAllRecommendedGames(games)
 
           // 异步增强数据 - 使用全局优化的批量 AppID 搜索方案
-          const enriched = await enrichGamesWithRAWG(games)
+          const enriched = await enrichGamesWithIGDB(games)
           setAllRecommendedGames(enriched)
         })
         .catch(err => {
@@ -160,35 +163,26 @@ export default function FestivalPage() {
 
   // 保证至少有一定规模的游戏池进行展示，并去重（包括与首页去重）
   const displayPool = (() => {
-    // 1. 获取首页已展示的游戏 ID
-    let homeShownIds = [];
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = sessionStorage.getItem('homepage_shown_ids');
-        if (stored) {
-          homeShownIds = JSON.parse(stored).map(id => String(id));
-        }
-      } catch (e) {
-        console.warn('Failed to read homepage shown IDs', e);
-      }
-    }
-
-    // 2. 过滤推荐的游戏：去重 + 过滤首页已显示的
+    // 1. 过滤推荐的游戏：去重 + 过滤首页已显示的
     const uniqueRecommended = allRecommendedGames.filter(
       (game, index, self) => 
         self.findIndex(g => String(g.gameid) === String(game.gameid)) === index &&
         !homeShownIds.includes(String(game.gameid))
     );
 
-    // 3. 过滤后备游戏：过滤首页已显示的 + 过滤已在推荐中的
+    // 2. 过滤后备游戏：过滤首页已显示的 + 过滤已在推荐中的
     const fallbackUnique = FALLBACK_GAMES.filter(
       fg => !uniqueRecommended.some(ag => String(ag.gameid) === String(fg.gameid)) &&
             !homeShownIds.includes(String(fg.gameid))
     );
 
-    // 4. 合并结果
+    // 3. 合并结果
     return [...uniqueRecommended, ...fallbackUnique];
   })();
+
+  if (!isMounted) {
+    return <div className="min-h-screen bg-background" />; // 或者返回一个骨架屏
+  }
 
   // 1. 画廊 (大图展示) - 取前 8 个
   const galleryGames = displayPool.slice(0, 8);
@@ -231,7 +225,7 @@ export default function FestivalPage() {
     
     return {
       gameid: game.gameid,
-      image: game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/header.jpg`,
+      image: game.background_image,
       title: getChineseName(game.title),
       category: simplifyThemeName(theme)
     }
@@ -305,7 +299,7 @@ export default function FestivalPage() {
                   {card1Game && (
                     <GameReleaseCard
                       gameid={card1Game.gameid}
-                      image={card1Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card1Game.gameid}/header.jpg`}
+                      image={card1Game.background_image}
                       title={getChineseName(card1Game.title)}
                       releaseDate={`属于你的${dynamicCopy.secondary.action}`}
                       platform={dynamicCopy.secondary.sub}
@@ -317,7 +311,7 @@ export default function FestivalPage() {
                   {card2Game && (
                     <VideoCard
                       gameid={card2Game.gameid}
-                      thumbnail={card2Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card2Game.gameid}/header.jpg`}
+                      thumbnail={card2Game.background_image}
                       title={getChineseName(card2Game.title)}
                       duration={card2Game.metacritic ? `${card2Game.metacritic}分` : "热门"}
                     />
@@ -331,7 +325,7 @@ export default function FestivalPage() {
                   {card3Game && (
                     <JaggedPromoCard
                       gameid={card3Game.gameid}
-                      image={card3Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card3Game.gameid}/header.jpg`}
+                      image={card3Game.background_image}
                       title={getChineseName(card3Game.title)}
                       description={card3Game.description || dynamicCopy.primary.sub}
                     />
@@ -340,7 +334,7 @@ export default function FestivalPage() {
                 {card4Game && (
                   <DarkGameCard
                     gameid={card4Game.gameid}
-                    image={card4Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card4Game.gameid}/header.jpg`}
+                    image={card4Game.background_image}
                     title={getChineseName(card4Game.title)}
                     description={card4Game.description || "发现属于你的高光时刻"}
                     featured={true}
@@ -363,7 +357,7 @@ export default function FestivalPage() {
                   {card5Game && (
                     <GameReleaseCard
                       gameid={card5Game.gameid}
-                      image={card5Game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${card5Game.gameid}/header.jpg`}
+                      image={card5Game.background_image}
                       title={getChineseName(card5Game.title)}
                       releaseDate={card5Game.metacritic ? `Metacritic: ${card5Game.metacritic}` : "热门推荐"}
                       platform={`${card5Game.recommendations?.toLocaleString() || '1,000+'} 人评价`}
@@ -384,7 +378,7 @@ export default function FestivalPage() {
                   <BannerGameCard
                     key={game.gameid}
                     gameid={game.gameid}
-                    image={game.background_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.gameid}/header.jpg`}
+                    image={game.background_image}
                     title={getChineseName(game.title)}
                     subtitle="属于你的高光之作"
                     variant={index === 0 ? "gradient" : "dark"}

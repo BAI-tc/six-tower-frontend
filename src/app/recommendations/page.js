@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Background from '../_components/background';
 import CustomImage from '../_components/custom-image';
-import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, getChineseName, enrichGamesWithRAWG } from '@/config';
+import { API_BASE, enrichGamesWithIGDB, getChineseName, igdb, IMAGE_API, IMAGE_SIZES } from '@/config';
 import LoadingScreen from '@/app/_components/loading-screen';
 import { SmartImage } from '@/components/common/smart-image';
 
@@ -98,7 +98,7 @@ function SteamPlatformIcons() {
 function SteamLandscapeCard({ game, size = 'small' }) {
   const appId = game.product_id || game.app_id || game.appid;
   const title = game.name || game.title || `Game ${appId}`;
-  const coverUrl = game.background_image || game.cover_url || getSteamCoverUrl(appId, 'header');
+  const coverUrl = game.background_image || game.cover_url;
 
   return (
     <Link href={`/games/${appId}`} className="group relative block aspect-[16/9] w-full bg-[#0e141d] rounded-xl overflow-hidden shadow-2xl transition-all duration-300 hover:scale-[1.02] border border-white/5 hover:border-white/20">
@@ -294,7 +294,7 @@ export default function RecommendationsPage() {
       // 2. 批量增强 (高清图片和中文名称)
       // 将所有需要显示的合在一起增强，效率最高
       const allToEnrich = [...finalSimilar, ...finalGenre, ...finalPopular, ...recentPlayed];
-      const enrichedAll = await enrichGamesWithRAWG(allToEnrich);
+      const enrichedAll = await enrichGamesWithIGDB(allToEnrich);
 
       // 3. 将增强后的数据映射回原来的部分
       const enrichedMap = {};

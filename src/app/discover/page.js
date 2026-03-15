@@ -2,98 +2,149 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { RAWG_API_URL, RAWG_API_KEY, getChineseName, enrichGamesWithRAWG } from '@/config';
+import { getChineseName, enrichGamesWithIGDB, igdb, IMAGE_API, IMAGE_SIZES, genreTranslationMap } from '@/config';
 import { useSearchHistory } from '@/hooks/useSearchHistory';
 import { WishlistButton } from '@/hooks/useWishlist';
 import LoadingScreen from '@/app/_components/loading-screen';
 
 const PAGE_SIZE = 60;
 
-// 核心类型翻译映射
-const genreTranslationMap = {
-  'Action': '动作',
-  'Role-Playing': '角色扮演',
-  'RPG': '角色扮演',
-  'Strategy': '策略',
-  'Adventure': '冒险',
-  'Simulation': '模拟',
-  'Sports': '体育',
-  'Racing': '竞速',
-  'Massively Multiplayer': '多人在线',
-  'Shooter': '射击',
-  'Puzzle': '益智',
-  'Indie': '独立',
-  'Platformer': '平台跳跃',
-  'Fighting': '格斗',
-  'Casual': '休闲',
-  'Arcade': '街机',
-  'Educational': '教育',
-  'Card': '卡牌',
-  'Family': '家庭'
+// IGDB 平台 ID 映射
+const IGDB_PLATFORMS = {
+  pc: 6,
+  playstation: 9,
+  xbox: 11,
+  nintendo: 7,
+  ios: 34,
+  android: 33,
+  mac: 13,
+  linux: 3,
 };
 
-// 本地 CSV 中的有效 app id 集合
-let validAppIds = new Set();
-let validAppIdsLoaded = false;
+// IGDB 流派 ID 映射
+const IGDB_GENRES = {
+  action: 31,
+  rpg: 12,
+  strategy: 15,
+  adventure: 31,
+  simulation: 14,
+  sports: 15,
+  racing: 10,
+  shooter: 2,
+  puzzle: 4,
+  indie: 32,
+  platformer: 4,
+  fighting: 4,
+  casual: 25,
+  arcade: 33,
+};
 
-// 从本地 CSV 加载有效的 app id (已禁用: CSV 文件太大不建议在客户端加载)
-async function loadValidAppIds() {
-  console.log('Valid app IDs filtering disabled for performance');
-  validAppIdsLoaded = true;
-  return validAppIds;
-}
+// 构建 IGDB 图片 URL
+const getIGDBCoverUrl = (imageId) => {
+  if (!imageId) return null;
+  return `${IMAGE_API}/${IMAGE_SIZES['c-big']}/${imageId}.jpg`;
+};
 
-// 过滤游戏，只保留 CSV 中存在的 app id
-function filterByValidAppIds(games) {
-  if (validAppIds.size === 0) return games;
-  return games.filter(g => validAppIds.has(g.id));
-}
-
-// 从 RAWG 获取游戏列表
+// 从 IGDB 获取游戏列表
 async function fetchGames(params) {
-  const queryParams = new URLSearchParams();
-
-  if (params.page) queryParams.set('page', params.page.toString());
-  if (params.page_size) queryParams.set('page_size', params.page_size.toString());
-  if (params.search) queryParams.set('search', params.search);
-  if (params.genres) queryParams.set('genres', params.genres);
-  if (params.platforms) queryParams.set('parent_platforms', params.platforms);
-  if (params.ordering) queryParams.set('ordering', params.ordering);
-  if (params.dates) queryParams.set('dates', params.dates);
-
   try {
-    const response = await fetch(`${RAWG_API_URL}/games?key=${RAWG_API_KEY}&${queryParams.toString()}`, { cache: 'no-store' });
-    if (response.status === 401 || response.status === 429) {
-      return { games: [], pagination: {}, error: 'RAWG_API_LIMIT' };
+    // 构建查询条件
+    let whereClause = 'cover.image_id != null';
+
+    if (params.genres) {
+      whereClause += ` & genres.slug = "${params.genres}"`;
     }
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        games: data.results || [],
-        pagination: {
-          page: params.page || 1,
-          page_size: params.page_size || PAGE_SIZE,
-          total: data.count || 0,
-          has_more: !!data.next
-        }
-      };
+
+    if (params.platforms) {
+      const igdbPlatformId = IGDB_PLATFORMS[params.platforms];
+      if (igdbPlatformId) {
+        whereClause += ` & platforms = ${igdbPlatformId}`;
+      }
     }
+
+    // 处理时间区间
+    if (params.dates) {
+      const dates = params.dates.split(',');
+      if (dates.length === 2) {
+        const start = Math.floor(new Date(dates[0]).getTime() / 1000);
+        const end = Math.floor(new Date(dates[1]).getTime() / 1000);
+        whereClause += ` & first_release_date >= ${start} & first_release_date <= ${end}`;
+      }
+    }
+
+    // 排序映射
+    let orderClause = 'sort popularity desc';
+    switch (params.ordering) {
+      case '-metacritic':
+      case '-rating':
+        orderClause = 'sort aggregated_rating desc';
+        break;
+      case '-released':
+        orderClause = 'sort first_release_date desc';
+        break;
+      case 'name':
+        orderClause = 'sort name asc';
+        break;
+      default:
+        orderClause = 'sort popularity desc';
+    }
+
+    const limit = params.page_size || PAGE_SIZE;
+    const offset = ((params.page || 1) - 1) * limit;
+
+    let searchPart = "";
+    if (params.search) {
+      searchPart = `search "${params.search.replace(/"/g, '\\"')}";`;
+      // 搜索模式下很多排序不生效
+      orderClause = "";
+    }
+
+    const query = `
+      fields id, name, cover.image_id, artworks.image_id, aggregated_rating, genres.name, genres.slug, platforms.name, first_release_date;
+      ${searchPart}
+      ${orderClause ? orderClause + ';' : ''}
+      where ${whereClause};
+      limit ${limit};
+      offset ${offset};
+    `;
+
+    const games = await igdb.request('/games', query);
+
+    return {
+      games: games.map(g => ({
+        id: g.id,
+        name: g.name,
+        // 发现页网格通常使用竖版封面
+        background_image: g.cover?.image_id ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${g.cover.image_id}.jpg` : null,
+        landscape_image: g.artworks?.[0]?.image_id ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${g.artworks[0].image_id}.jpg` : null,
+        rating: g.aggregated_rating,
+        released: g.first_release_date ? new Date(g.first_release_date * 1000).toISOString().split('T')[0] : null,
+        genres: g.genres?.map(gg => gg.name) || [],
+        platforms: g.platforms?.map(p => ({ platform: { name: p.name } })) || []
+      })),
+      pagination: {
+        page: params.page || 1,
+        page_size: limit,
+        has_more: games.length === limit
+      }
+    };
   } catch (error) {
-    console.error('Error fetching games:', error);
+    console.error('Error fetching games from IGDB:', error);
   }
   return { games: [], pagination: {} };
 }
 
-// 从 RAWG 获取品类列表
+// 从 IGDB 获取流派列表
 async function fetchGenres() {
   try {
-    const response = await fetch(`${RAWG_API_URL}/genres?key=${RAWG_API_KEY}`, { cache: 'no-store' });
-    if (response.ok) {
-      const data = await response.json();
-      return data.results || [];
-    }
+    const genres = await igdb.request('/genres', 'fields id, name, slug; limit 100;');
+    return genres.map(g => ({
+      id: g.id,
+      name: g.name,
+      slug: g.slug
+    }));
   } catch (error) {
-    console.error('Error fetching genres:', error);
+    console.error('Error fetching genres from IGDB:', error);
   }
   return [];
 }
@@ -392,8 +443,6 @@ export default function DiscoverPage() {
   const { history, addToHistory, clearHistory, removeFromHistory } = useSearchHistory();
 
   useEffect(() => {
-    // 先加载本地有效的 app id
-    loadValidAppIds();
     loadGenres();
   }, []);
 
@@ -408,50 +457,22 @@ export default function DiscoverPage() {
 
   const loadGames = async () => {
     setIsLoading(true);
-    
-    // 因为 RAWG API 单次请求最多返回 40 条数据，为了实现 60 条（6*10）的展示，
-    // 我们将 UI 的每一页对应到 RAWG 的两个连续页（每页 30 条）
-    const fetchPagePart = async (pageNum) => {
-      const params = {
-        page: pageNum,
-        page_size: 30,
+
+    try {
+      const data = await fetchGames({
+        page: filters.page,
+        page_size: filters.page_size,
         ordering: filters.ordering,
         genres: filters.genres,
         platforms: filters.platforms,
         dates: filters.dates,
         search: filters.search,
-      };
-      return await fetchGames(params);
-    };
-
-    try {
-      // 并行请求两个部分
-      const [data1, data2] = await Promise.all([
-        fetchPagePart(filters.page * 2 - 1),
-        fetchPagePart(filters.page * 2)
-      ]);
-
-      if (data1.error === 'RAWG_API_LIMIT' || data2.error === 'RAWG_API_LIMIT') {
-        window.alert('RAWG API 次数已达上限或 Key 无效，部分内容可能无法显示。');
-        setIsLoading(false);
-        return;
-      }
-
-      const combinedGames = [...(data1.games || []), ...(data2.games || [])];
-      
-      // 添加：使用全局增强工具补全中文名称和高清图片
-      const enrichedGames = await enrichGamesWithRAWG(combinedGames);
-      
-      // 过滤只保留 CSV 中存在的 app id (如果已加载)
-      const filteredGames = validAppIds.size > 0 ? filterByValidAppIds(enrichedGames) : enrichedGames;
-      
-      setGames(filteredGames);
-      setPagination({
-        ...data2.pagination,
-        page: filters.page,
-        page_size: 60,
-        has_more: data2.pagination.has_more
       });
+
+      const enrichedGames = await enrichGamesWithIGDB(data.games || []);
+      
+      setGames(enrichedGames);
+      setPagination(data.pagination);
     } catch (error) {
       console.error('Error in loadGames:', error);
     }

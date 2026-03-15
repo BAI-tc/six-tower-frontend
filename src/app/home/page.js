@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Background from '../_components/background';
 import CustomImage from '../_components/custom-image';
 import LoadingScreen from '../_components/loading-screen';
-import { API_BASE, RAWG_API_URL, RAWG_API_KEY, getSteamCoverUrl, enrichGamesWithRAWG, getChineseName } from '@/config';
+import { API_BASE, enrichGamesWithIGDB, getChineseName, igdb, IMAGE_API, IMAGE_SIZES } from '@/config';
 import { WishlistButton } from '@/hooks/useWishlist';
 // 导入推荐系统 API
 import { fetchSceneInfo, fetchTrendingGames, fetchPopularGames } from '@/api/recommendations';
@@ -54,34 +54,60 @@ import { AnimatedSection } from '@/components/common/lazy-section';
 
 // ============ API Functions ============
 
-// RAWG 热门游戏
-async function fetchRAWGTopRated(page = 1, limit = 18) {
+// IGDB 热门游戏 (替换原本的 RAWG)
+async function fetchIGDBTopRated(page = 1, limit = 18) {
   try {
-    const response = await fetch(
-      `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&dates=2020-01-01,2025-12-31&ordering=-added,-rating,-reviews_count,-metacritic&page=${page}&page_size=${limit}`,
-      { cache: 'no-store' }
-    );
-    if (response.ok) {
-      const data = await response.json();
-      return { games: data.results || [], nextPage: data.next ? page + 1 : null };
-    }
+    const results = await igdb.request('/games', `
+      fields name, cover.image_id, artworks.image_id, summary, aggregated_rating, genres.name, first_release_date, platforms.slug;
+      sort aggregated_rating desc;
+      where aggregated_rating_count > 20 & aggregated_rating != null & cover.image_id != null;
+      offset ${(page - 1) * limit};
+      limit ${limit};
+    `);
+    
+    const mapped = Array.isArray(results) ? results.map(game => {
+      return {
+        ...game,
+        background_image: game.artworks && game.artworks.length > 0 
+          ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${game.artworks[0].image_id}.jpg`
+          : (game.cover ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${game.cover.image_id}.jpg` : null),
+        cover_url: game.cover ? `${IMAGE_API}/${IMAGE_SIZES['hd']}/${game.cover.image_id}.jpg` : null,
+        rating: game.aggregated_rating,
+        released: game.first_release_date ? new Date(game.first_release_date * 1000).toISOString() : null
+      };
+    }) : [];
+
+    return { games: mapped, nextPage: results.length === limit ? page + 1 : null };
   } catch (error) {
-    console.error('Error fetching RAWG games:', error);
+    console.error('Error fetching IGDB games:', error);
   }
   return { games: [], nextPage: null };
 }
 
-// 新品热卖
-async function fetchRAWGNewReleases(page = 1, limit = 18) {
+// 新品热卖 (IGDB 版)
+async function fetchIGDBNewReleases(limit = 18) {
   try {
-    const response = await fetch(
-      `${RAWG_API_URL}/games?key=${RAWG_API_KEY}&dates=2024-01-01,2025-12-31&ordering=-released,-added&page=${page}&page_size=${limit}`,
-      { cache: 'no-store' }
-    );
-    if (response.ok) {
-      const data = await response.json();
-      return data.results || [];
-    }
+    const results = await igdb.request('/games', `
+      fields name, cover.image_id, screenshots.image_id, aggregated_rating, genres.name, first_release_date, platforms.slug;
+      sort first_release_date desc;
+      where first_release_date != null & first_release_date < ${Math.floor(Date.now() / 1000)} & cover.image_id != null;
+      limit ${limit};
+    `);
+    
+    return Array.isArray(results) ? results.map(game => {
+      let backgroundImage = null;
+      if (game.screenshots && game.screenshots.length > 0) {
+        backgroundImage = `${IMAGE_API}/${IMAGE_SIZES['hd']}/${game.screenshots[0].image_id}.jpg`;
+      } else if (game.cover) {
+        backgroundImage = `${IMAGE_API}/${IMAGE_SIZES['hd']}/${game.cover.image_id}.jpg`;
+      }
+      return {
+        ...game,
+        background_image: backgroundImage,
+        rating: game.aggregated_rating,
+        released: game.first_release_date ? new Date(game.first_release_date * 1000).toISOString() : null
+      };
+    }) : [];
   } catch (error) {
     console.error('Error fetching new releases:', error);
   }
@@ -132,18 +158,18 @@ function NetflixCard({ game }) {
   const appId = game.steam_appid || game.product_id || game.id || game.appid;
   const name = game.title || game.name || game.app_name || `Game ${appId}`;
 
-  // 核心修改：死磕 RAWG 来源，除非万不得已不回退到 Steam CDN
-  const coverUrl = game.background_image || game.cover_url;
-  const rating = game.rawg_metacritic || game.metacritic || game.rawg_rating || game.rating || game.score;
-  const released = game.rawg_released || game.released;
-  const genres = (game.rawg_genres || game.genres || []).slice(0, 2).map(g => {
+  // 竖版卡片优先使用封面
+  const coverUrl = game.cover_url || game.background_image;
+  const rating = game.metacritic || game.rating || game.score || game.aggregated_rating;
+  const released = game.released || game.first_release_date;
+  const genres = (game.genres || []).slice(0, 2).map(g => {
     const name = g.name || g;
     return genreTranslationMap[name] || name;
   });
   const platforms = getGamePlatforms(game);
 
-  // 如果没有有效图片，使用占位图
-  const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/600x900/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 10) || 'Game')}`;
+  // 如果没有有效图片，显示空
+  const displayCoverUrl = coverUrl;
 
   const year = released ? new Date(released).getFullYear() : null;
 
@@ -226,7 +252,7 @@ function FeaturedCard({ game, reason }) {
   const appId = game.steam_appid || game.product_id || game.id;
   const name = game.title || game.name;
   const coverUrl = game.background_image || game.cover_url;
-  const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+  const displayCoverUrl = coverUrl;
   const rating = game.metacritic || game.rating;
 
   return (
@@ -369,7 +395,7 @@ function EpicCarousel({ games }) {
       <div className="absolute inset-0 flex items-center z-20 overflow-hidden">
         {games.map((game, idx) => {
           const isActive = idx === currentIndex;
-          const gGenres = game.rawg_genres || game.genres || [];
+          const gGenres = game.genres || [];
           const appId = game.steam_appid || game.id || game.product_id;
           const gDetail = gameDetails[appId] || gameDetails[game.id];
 
@@ -447,14 +473,14 @@ function SceneGridCard({ game, isLarge = false, sceneType = 'standard' }) {
   const appId = game.steam_appid || game.product_id || game.id || game.appid;
   const name = game.title || game.name || game.app_name;
   const coverUrl = game.background_image || game.cover_url;
-  const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/800x450/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+  const displayCoverUrl = coverUrl;
   const matchScore = game.match_reason || game.similarity_score;
-  const rawGenres = game.genres?.slice(0, 2).map(g => g.name || g) || [game.preferred_genre || 'Universal'];
-  const genres = rawGenres.map(g => genreTranslationMap[g] || g).join(' / ');
+  const genreList = game.genres?.slice(0, 2).map(g => g.name || g) || [game.preferred_genre || 'Universal'];
+  const genres = genreList.map(g => genreTranslationMap[g] || g).join(' / ');
 
   const percentage = typeof matchScore === 'number'
     ? (matchScore > 1 ? Math.round(matchScore) : Math.round(matchScore * 100))
-    : (parseInt(matchScore) || (Math.floor(Math.random() * 15) + 82));
+    : (parseInt(matchScore) || (82 + (parseInt(appId) % 15)));
 
   return (
     <Link href={`/games/${appId}`} className="group relative block w-full h-full overflow-hidden rounded-xl bg-[#0e141d] shadow-lg border border-white/5 hover:border-[#ff00ff]/30 transition-all duration-500">
@@ -477,7 +503,7 @@ function SceneGridCard({ game, isLarge = false, sceneType = 'standard' }) {
           </p>
         </div>
         <div className={`${isLarge ? 'text-3xl' : 'text-xl'} font-bold opacity-90 transition-all duration-300 text-white group-hover:text-[#ff00ff]`}>
-          {game.metacritic || game.rawg_metacritic || (game.rating ? Math.round(game.rating * 20) : percentage)}
+          {game.metacritic || game.aggregated_rating || (game.rating ? Math.round(game.rating * 20) : percentage)}
         </div>
       </div>
 
@@ -699,7 +725,7 @@ function SixTowerBanner() {
   return (
     <div className="mb-14 mt-12 grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-12 shrink-0">
       {/* 悟空 Banner - 链接到游戏详情页 */}
-      <Link href="/games/2692320" className="relative h-[200px] rounded-[24px] bg-gradient-to-br from-[#1a1a1a] via-[#2d1212] to-black hover:scale-[1.01] transition-all duration-500 group block shadow-2xl border border-white/5">
+      <Link href="/games/2358720" className="relative h-[200px] rounded-[24px] bg-gradient-to-br from-[#1a1a1a] via-[#2d1212] to-black hover:scale-[1.01] transition-all duration-500 group block shadow-2xl border border-white/5">
         {/* Banner左侧文字 */}
         <div className="relative z-20 h-full flex flex-col justify-center pl-8 md:pl-12 w-3/5">
           <h2 className="text-3xl font-black text-white tracking-widest drop-shadow-md mb-2">黑神话：悟空</h2>
@@ -754,7 +780,7 @@ function PersonalizedSteamSection({ games, title, reason, type = 'standard' }) {
           const appId = game.steam_appid || game.product_id || game.id || game.appid;
           const name = game.title || game.name || game.app_name;
           const coverUrl = game.background_image || game.cover_url;
-          const displayCoverUrl = coverUrl || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || `https://placehold.co/640x360/1a1a2e/ffffff?text=${encodeURIComponent(name?.slice(0, 15) || 'Game')}`;
+          const displayCoverUrl = coverUrl;
           const rating = game.metacritic || game.rating;
 
           return (
@@ -826,8 +852,8 @@ function GenreCompactShowcase({ genreSpotlight }) {
               {games.slice(0, 4).map((game, idx) => {
                 const appId = game.steam_appid || game.product_id || game.id || game.appid;
                 const gameName = game.name || game.title || game.app_name;
-                const coverUrl = game.background_image || (appId ? getSteamCoverUrl(appId, 'library_600x900') : null) || game.cover_url;
-                const displayCoverUrl = coverUrl || `https://placehold.co/450x600/1a1a2e/ffffff?text=${encodeURIComponent(gameName?.slice(0, 10) || 'Game')}`;
+                const coverUrl = game.cover_url || game.background_image;
+                const displayCoverUrl = coverUrl;
                 return (
                   <Link
                     key={`${appId}-${idx}`}
@@ -969,10 +995,10 @@ export default function HomePage() {
   const loadPublicDataWithScenes = async () => {
     setIsLoading(true);
 
-    // 未登录用户使用 RAWG API（公开数据）
+    // 未登录用户使用 IGDB API
     const [topRated, newReleasesData, trending] = await Promise.all([
-      fetchRAWGTopRated(1, 18),
-      fetchRAWGNewReleases(1, 18),
+      fetchIGDBTopRated(1, 18),
+      fetchIGDBNewReleases(18),
       fetchTrendingGames(10, 'week')
     ]);
 
@@ -981,6 +1007,23 @@ export default function HomePage() {
     const genres = ['动作', '角色扮演', '策略', '冒险', '模拟'];
     const genrePromises = genres.map(g => fetchPopularGames(15, g));
     const genreResults = await Promise.all(genrePromises);
+    // 为趋势推荐和分类专题补全图片
+    const allPublicGames = [
+      ...(trending.games || []),
+      ...genreResults.flatMap(r => r.games || [])
+    ];
+    
+    if (allPublicGames.length > 0) {
+      const enrichedPublic = await enrichGamesWithIGDB(allPublicGames);
+      const publicMap = new Map(enrichedPublic.map(g => [String(g.appid || g.id || g.product_id), g]));
+      const applyPublic = games => games.map(g => publicMap.get(String(g.appid || g.id || g.product_id)) || g);
+      
+      trending.games = applyPublic(trending.games || []);
+      genreResults.forEach(r => {
+        if (r.games) r.games = applyPublic(r.games);
+      });
+    }
+
     const genreObj = {};
     const usedGenreGameIds = new Set(); // 跨类型去重
     genres.forEach((g, i) => {
@@ -998,7 +1041,7 @@ export default function HomePage() {
       }
     });
 
-    // 优先设置核心模块并关闭加载动画，提升首屏交互速度
+    // 优先设置核心模块并关闭加载动画
     setTopRatedGames(topRated.games || []);
     setNewReleases(newReleasesData || []);
     setTrendingGames(trending.games || []);
@@ -1017,7 +1060,7 @@ export default function HomePage() {
           fetch(`${API_BASE}/recommendations/scene?user_id=0&scene_id=10&topk=${MODULE_CONFIG.cult.topk}&offset=${MODULE_CONFIG.cult.offset}`).then(r => r.json()).catch(() => ({ recommendations: [] }))
         ]);
 
-        // 使用 enrichGamesWithRAWG 获取 RAW G 高清图片
+        // 使用 enrichGamesWithIGDB 获取 IGDB 高清图片
         const allBackendGames = [
           ...(tribeRes.recommendations || []),
           ...(quantumRes.recommendations || []),
@@ -1027,7 +1070,7 @@ export default function HomePage() {
         ];
 
         if (allBackendGames.length > 0) {
-          const enrichedGames = await enrichGamesWithRAWG(allBackendGames);
+          const enrichedGames = await enrichGamesWithIGDB(allBackendGames);
           const enrichedMap = new Map(enrichedGames.map(g => [String(g.appid || g.id || g.product_id), g]));
           const applyEnriched = (games) => games.map(g => enrichedMap.get(String(g.appid || g.id || g.product_id)) || g);
 
@@ -1087,7 +1130,7 @@ export default function HomePage() {
       // 2. 核心模块图片获取并立即显示
       // 包含最近玩过的游戏，确保画质一致
       const coreGames = [...topRatedGames, ...newReleasesGames, ...trendingGames, ...recentGames];
-      const enrichedCore = await enrichGamesWithRAWG(coreGames);
+      const enrichedCore = await enrichGamesWithIGDB(coreGames);
       const coreMap = new Map(enrichedCore.map(g => [String(g.appid || g.id || g.product_id), g]));
       const applyCore = games => games.map(g => coreMap.get(String(g.appid || g.id || g.product_id)) || g);
       
@@ -1146,7 +1189,7 @@ export default function HomePage() {
           ...quantumGames, ...resurrectionGames, ...chronosGames, ...cultGames
         ];
 
-        const enrichedAll = await enrichGamesWithRAWG(allP2Games);
+        const enrichedAll = await enrichGamesWithIGDB(allP2Games);
         const allMap = new Map(enrichedAll.map(g => [String(g.appid || g.id || g.product_id), g]));
         const applyAll = games => games.map(g => allMap.get(String(g.appid || g.id || g.product_id)) || g);
 
@@ -1161,8 +1204,8 @@ export default function HomePage() {
           enrichedGenre.forEach(game => {
             const gameId = game.appid || game.id || game.product_id;
             if (usedGenreGameIds.has(String(gameId))) return;
-            const rawGenres = game.genres?.map(g => g.name || g) || [];
-            let primaryGenre = genreTranslationMap[rawGenres[0] || game.preferred_genre || 'Indie'] || (rawGenres[0] || game.preferred_genre || 'Indie');
+            const genreList = game.genres?.map(g => g.name || g) || [];
+            let primaryGenre = genreTranslationMap[genreList[0] || game.preferred_genre || 'Indie'] || (genreList[0] || game.preferred_genre || 'Indie');
             if (!grouped[primaryGenre]) grouped[primaryGenre] = [];
             if (grouped[primaryGenre].length < 4) {
               grouped[primaryGenre].push(game);
