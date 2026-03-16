@@ -1,0 +1,2 @@
+warning: both GOPATH and GOROOT are the same directory (E:\go); see https://go.dev/wiki/InstallTroubleshooting
+GetFileAttributesEx main.go: The system cannot find the file specified.
